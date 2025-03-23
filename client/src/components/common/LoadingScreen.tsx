@@ -1,4 +1,3 @@
-// src/components/common/LoadingScreen.tsx
 import React from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 
