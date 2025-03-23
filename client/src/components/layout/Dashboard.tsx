@@ -86,12 +86,10 @@ const DashboardLayout: React.FC = () => {
   
   const isSmallScreen = useMediaQuery((theme) => theme.breakpoints.down('md'));
 
-  // Check if the current path matches an Orders submenu item
   const isOrdersPathActive = () => {
     return location.pathname.includes('/orders');
   };
 
-  // Effect to auto-open the Orders submenu if on an orders page
   useEffect(() => {
     if (isOrdersPathActive() && openSubMenu !== 'Orders') {
       setOpenSubMenu('Orders');
