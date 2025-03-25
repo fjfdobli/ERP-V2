@@ -1,8 +1,6 @@
-// src/redux/slices/employeesSlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import apiClient from './apiClient';
 
-// Types
 interface Employee {
   id: string;
   employeeId: string;
@@ -40,7 +38,6 @@ interface EmployeesState {
   error: string | null;
 }
 
-// Initial state
 const initialState: EmployeesState = {
   employees: [],
   currentEmployee: null,
@@ -49,7 +46,6 @@ const initialState: EmployeesState = {
   error: null
 };
 
-// Async actions
 export const fetchEmployees = createAsyncThunk(
   'employees/fetchEmployees',
   async (_, { rejectWithValue }) => {
@@ -122,7 +118,6 @@ export const recordAttendance = createAsyncThunk(
   }
 );
 
-// Slice
 const employeesSlice = createSlice({
   name: 'employees',
   initialState,
@@ -136,7 +131,6 @@ const employeesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Fetch employees
       .addCase(fetchEmployees.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -150,7 +144,6 @@ const employeesSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Fetch employee by ID
       .addCase(fetchEmployeeById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -164,7 +157,6 @@ const employeesSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Create employee
       .addCase(createEmployee.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -178,7 +170,6 @@ const employeesSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Update employee
       .addCase(updateEmployee.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -196,7 +187,6 @@ const employeesSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Fetch employee attendance
       .addCase(fetchEmployeeAttendance.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -210,7 +200,6 @@ const employeesSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Record attendance
       .addCase(recordAttendance.pending, (state) => {
         state.isLoading = true;
         state.error = null;

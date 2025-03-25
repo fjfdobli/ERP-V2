@@ -2,27 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { register, clearError } from '../redux/slices/authSlice';
-import { 
-  Box, 
-  Container, 
-  Paper, 
-  Typography, 
-  TextField, 
-  Button, 
-  Alert, 
-  InputAdornment,
-  IconButton,
-  Grid,
-  Divider
-} from '@mui/material';
-import { 
-  Visibility, 
-  VisibilityOff, 
-  Email, 
-  Lock, 
-  Person, 
-  ArrowBack 
-} from '@mui/icons-material';
+import { Box, Container, Paper, Typography, TextField, Button, Alert, InputAdornment, IconButton, Grid } from '@mui/material';
+import { Visibility, VisibilityOff, Email, Lock, Person, ArrowBack } from '@mui/icons-material';
 import PrintIcon from '@mui/icons-material/Print';
 
 const Register = () => {
@@ -46,27 +27,15 @@ const Register = () => {
     }
   }, [dispatch, isAuthenticated, navigate]);
 
-interface RegisterFormState {
-    firstName: string;
-    lastName: string;
-    email: string;
-    password: string;
-    confirmPassword: string;
-    showPassword: boolean;
-    showConfirmPassword: boolean;
-    passwordError: string;
-}
 
 const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     
-    // Validate passwords match
     if (password !== confirmPassword) {
         setPasswordError('Passwords do not match');
         return;
     }
     
-    // Password strength validation
     if (password.length < 8) {
         setPasswordError('Password must be at least 8 characters');
         return;
@@ -108,7 +77,7 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                 <PrintIcon sx={{ fontSize: 40, mr: 1 }} />
                 <Typography variant="h4" component="h1" fontWeight="bold">
-                  Printing Press ERP
+                  Opzon's Printing Press
                 </Typography>
               </Box>
               <Typography variant="subtitle1">
@@ -289,8 +258,8 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>): void => {
         </Paper>
         
         <Box sx={{ mt: 4, textAlign: 'center' }}>
-          <Typography variant="body2" color="white">
-            © {new Date().getFullYear()} Printing Press ERP. All rights reserved.
+          <Typography variant="body2" color="black">
+            © {new Date().getFullYear()} Opzon's Printing Press. All rights reserved.
           </Typography>
         </Box>
       </Container>

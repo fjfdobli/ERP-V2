@@ -1,8 +1,7 @@
-// src/redux/slices/clientsSlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import apiClient from './apiClient';
+import { clientsService } from '../../services/clientsService';
 
-// Types
 interface Client {
   id: string;
   name: string;
@@ -22,7 +21,6 @@ interface ClientsState {
   error: string | null;
 }
 
-// Initial state
 const initialState: ClientsState = {
   clients: [],
   currentClient: null,
@@ -30,13 +28,35 @@ const initialState: ClientsState = {
   error: null
 };
 
-// Async actions
+// Map service client to the format expected by the application
+const mapServiceClientToClient = (client: any): Client => {
+  return {
+    id: client.id?.toString() || '',
+    name: client.name || '',
+    contactPerson: client.contactPerson || '',
+    email: client.email || '',
+    phone: client.phone || '',
+    address: client.address || '',
+    notes: client.notes || '',
+    createdAt: client.createdAt || client.created_at,
+    updatedAt: client.updatedAt || client.updated_at
+  };
+};
+
 export const fetchClients = createAsyncThunk(
   'clients/fetchClients',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get('/clients');
-      return response.data.data;
+      try {
+        // First try the API
+        const response = await apiClient.get('/clients');
+        return response.data.data;
+      } catch (apiError) {
+        // On API failure, use the clients service with mock data
+        console.log('API fetch failed, using clients service');
+        const clients = await clientsService.getClients();
+        return clients.map(mapServiceClientToClient);
+      }
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch clients');
     }
@@ -47,8 +67,14 @@ export const fetchClientById = createAsyncThunk(
   'clients/fetchClientById',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`/clients/${id}`);
-      return response.data.data;
+      try {
+        const response = await apiClient.get(`/clients/${id}`);
+        return response.data.data;
+      } catch (apiError) {
+        // On API failure, use the clients service with mock data
+        const client = await clientsService.getClientById(parseInt(id));
+        return mapServiceClientToClient(client);
+      }
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch client');
     }
@@ -91,7 +117,6 @@ export const deleteClient = createAsyncThunk(
   }
 );
 
-// Slice
 const clientsSlice = createSlice({
   name: 'clients',
   initialState,
@@ -105,7 +130,6 @@ const clientsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Fetch clients
       .addCase(fetchClients.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -117,9 +141,9 @@ const clientsSlice = createSlice({
       .addCase(fetchClients.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+        state.clients = []; // Empty data on error
       })
       
-      // Fetch client by ID
       .addCase(fetchClientById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -133,7 +157,6 @@ const clientsSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Create client
       .addCase(createClient.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -147,7 +170,6 @@ const clientsSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Update client
       .addCase(updateClient.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -165,7 +187,6 @@ const clientsSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Delete client
       .addCase(deleteClient.pending, (state) => {
         state.isLoading = true;
         state.error = null;

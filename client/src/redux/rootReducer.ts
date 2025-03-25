@@ -1,4 +1,3 @@
-// src/redux/rootReducer.ts
 import { combineReducers } from '@reduxjs/toolkit';
 import authReducer from './slices/authSlice';
 import clientsReducer from './slices/clientsSlice';

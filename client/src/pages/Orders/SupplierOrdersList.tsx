@@ -1,20 +1,5 @@
-// src/pages/Orders/SupplierOrdersList.tsx
 import React from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow,
-  Button,
-  TextField,
-  InputAdornment,
-  Chip
-} from '@mui/material';
+import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Chip } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon } from '@mui/icons-material';
 
 const SupplierOrdersList: React.FC = () => {
@@ -65,7 +50,7 @@ const SupplierOrdersList: React.FC = () => {
                 <TableCell>PO-2025-0000{row}</TableCell>
                 <TableCell>Supplier {row}</TableCell>
                 <TableCell>2025-03-{10 + row}</TableCell>
-                <TableCell>${(500 * row).toFixed(2)}</TableCell>
+                <TableCell>₱{(500 * row).toFixed(2)}</TableCell>
                 <TableCell>
                   <Chip 
                     label={row % 3 === 0 ? 'Delivered' : row % 2 === 0 ? 'Confirmed' : 'Pending'} 

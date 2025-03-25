@@ -174,15 +174,15 @@ const DashboardLayout: React.FC = () => {
               fontWeight: 'bold'
             }}
           >
-            {getInitial(user.user_metadata?.firstName) || getInitial(user.email)}
+            {getInitial(user.firstName) || getInitial(user.email)}
           </Avatar>
           <Typography variant="subtitle1" sx={{ mt: 1, fontWeight: 'medium' }}>
-            {user.user_metadata?.firstName 
-              ? `${user.user_metadata.firstName} ${user.user_metadata.lastName || ''}`
+            {user.firstName 
+              ? `${user.firstName} ${user.lastName || ''}`
               : user.email}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Admin
+            {user.role || 'Admin'}
           </Typography>
         </Box>
       )}
@@ -192,7 +192,6 @@ const DashboardLayout: React.FC = () => {
       <List sx={{ flexGrow: 1, px: 1 }}>
         {menuItems.map((item) => (
           <React.Fragment key={item.text}>
-            {/* If item has children, render as collapsible menu */}
             {item.children ? (
               <>
                 <ListItem disablePadding>
@@ -256,7 +255,6 @@ const DashboardLayout: React.FC = () => {
                 </Collapse>
               </>
             ) : (
-              // Regular menu item without children
               <ListItem disablePadding>
                 <ListItemButton
                   sx={{ 
@@ -308,7 +306,6 @@ const DashboardLayout: React.FC = () => {
     </Box>
   );
 
-  // Helper function to get the page title from the pathname
   const getPageTitle = () => {
     if (location.pathname.includes('/orders/requests')) return 'Order Requests';
     if (location.pathname.includes('/orders/clients')) return 'Client Orders';
@@ -430,7 +427,7 @@ const DashboardLayout: React.FC = () => {
             color="inherit"
             startIcon={
               <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.dark' }}>
-                {getInitial(user?.user_metadata?.firstName) || getInitial(user?.email)}
+                {getInitial(user?.firstName) || getInitial(user?.email)}
               </Avatar>
             }
             endIcon={<MenuIcon />}
@@ -438,12 +435,12 @@ const DashboardLayout: React.FC = () => {
           >
             <Box sx={{ textAlign: 'left', display: { xs: 'none', sm: 'block' } }}>
               <Typography variant="body2" sx={{ fontWeight: 'medium', lineHeight: 1.2 }}>
-                {user?.user_metadata?.firstName 
-                  ? `${user.user_metadata.firstName} ${user.user_metadata.lastName || ''}`
+                {user?.firstName 
+                  ? `${user.firstName} ${user.lastName || ''}`
                   : user?.email}
               </Typography>
               <Typography variant="caption" color="inherit" sx={{ opacity: 0.8 }}>
-                Admin
+                {user?.role || 'Admin'}
               </Typography>
             </Box>
           </Button>

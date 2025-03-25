@@ -1,21 +1,8 @@
-// src/pages/Login.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { login, clearError } from '../redux/slices/authSlice';
-import { 
-  Box, 
-  Container, 
-  Paper, 
-  Typography, 
-  TextField, 
-  Button, 
-  Alert, 
-  InputAdornment,
-  IconButton,
-  Grid,
-  Divider
-} from '@mui/material';
+import { Box, Container, Paper, Typography, TextField, Button, Alert, InputAdornment, IconButton, Grid, Divider } from '@mui/material';
 import { Visibility, VisibilityOff, Email, Lock } from '@mui/icons-material';
 import PrintIcon from '@mui/icons-material/Print';
 
@@ -196,8 +183,8 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         </Paper>
         
         <Box sx={{ mt: 4, textAlign: 'center' }}>
-          <Typography variant="body2" color="white">
-            © {new Date().getFullYear()} Printing Press ERP. All rights reserved.
+          <Typography variant="body2" color="black">
+            © {new Date().getFullYear()} Opzon's Printing Press. All rights reserved.
           </Typography>
         </Box>
       </Container>

@@ -7,8 +7,6 @@ import { store } from './redux/store';
 import { useAppDispatch, useAppSelector } from './redux/hooks';
 import { getCurrentUser } from './redux/slices/authSlice';
 import theme from './theme';
-
-// Pages
 import Login from './pages/Login';
 import Register from './pages/Register';
 import DashboardLayout from './components/layout/Dashboard';
@@ -26,7 +24,6 @@ import ReportsList from './pages/Reports/ReportsList';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/common/LoadingScreen';
 
-// Protected Route Component
 interface ProtectedRouteProps {
   children: ReactNode;
 }
@@ -36,7 +33,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const dispatch = useAppDispatch();
   
   useEffect(() => {
-    // Check if token exists but user isn't authenticated yet
     if (!isAuthenticated && !loading) {
       const token = localStorage.getItem('token');
       if (token) {
@@ -56,7 +52,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   return <>{children}</>;
 };
 
-// App initialization check
 const AppInitializer: React.FC = () => {
   const dispatch = useAppDispatch();
   

@@ -4,35 +4,8 @@ import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { fetchOrders } from '../../redux/slices/ordersSlice';
 import { fetchClients } from '../../redux/slices/clientsSlice';
 import { fetchInventory, fetchLowStockItems } from '../../redux/slices/inventorySlice';
-import {
-  Box,
-  Grid,
-  Paper,
-  Typography,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-  Card,
-  CardContent,
-  CardHeader,
-  Avatar,
-  IconButton,
-  Button,
-  Chip,
-  useTheme,
-  LinearProgress
-} from '@mui/material';
-import {
-  Assignment as OrdersIcon,
-  People as ClientsIcon,
-  Inventory as InventoryIcon,
-  Warning as WarningIcon,
-  TrendingUp as TrendingUpIcon,
-  MoreVert as MoreVertIcon,
-  ChevronRight as ChevronRightIcon,
-  Circle as CircleIcon
-} from '@mui/icons-material';
+import { Box, Grid, Paper, Typography, Divider, List, ListItem, ListItemText, Card, CardContent, CardHeader, Avatar, IconButton, Button, Chip, useTheme, LinearProgress } from '@mui/material';
+import { Assignment as OrdersIcon, People as ClientsIcon, Inventory as InventoryIcon, Warning as WarningIcon, TrendingUp as TrendingUpIcon, MoreVert as MoreVertIcon, ChevronRight as ChevronRightIcon, Circle as CircleIcon } from '@mui/icons-material';
 
 interface Order {
   id: string;
@@ -87,23 +60,44 @@ const DashboardHome: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   
-  const { orders, isLoading: ordersLoading } = useAppSelector(state => state.orders);
-  const { clients, isLoading: clientsLoading } = useAppSelector(state => state.clients);
-  const { inventoryItems, lowStockItems, isLoading: inventoryLoading } = useAppSelector(state => state.inventory);
+  const { orders, isLoading: ordersLoading, error: ordersError } = useAppSelector(state => state.orders);
+  const { clients, error: clientsError } = useAppSelector(state => state.clients);
+  const { inventoryItems, lowStockItems, isLoading: inventoryLoading, error: inventoryError } = useAppSelector(state => state.inventory);
 
   useEffect(() => {
-    dispatch(fetchOrders());
-    dispatch(fetchClients());
-    dispatch(fetchInventory());
-    dispatch(fetchLowStockItems());
+    // Wrap in try/catch to prevent component crashes
+    try {
+      dispatch(fetchOrders());
+    } catch (error) {
+      console.error('Error dispatching fetchOrders:', error);
+    }
+    
+    try {
+      dispatch(fetchClients());
+    } catch (error) {
+      console.error('Error dispatching fetchClients:', error);
+    }
+    
+    try {
+      dispatch(fetchInventory());
+    } catch (error) {
+      console.error('Error dispatching fetchInventory:', error);
+    }
+    
+    try {
+      dispatch(fetchLowStockItems());
+    } catch (error) {
+      console.error('Error dispatching fetchLowStockItems:', error);
+    }
   }, [dispatch]);
 
-  const pendingOrders = orders?.filter(order => order.status === 'Pending').length || 0;
-  const inProgressOrders = orders?.filter(order => order.status === 'In Progress').length || 0;
-  const completedOrders = orders?.filter(order => order.status === 'Completed').length || 0;
+  // Safely access data with fallbacks
+  const pendingOrders = (orders || []).filter(order => order.status === 'Pending').length || 0;
+  const inProgressOrders = (orders || []).filter(order => order.status === 'In Progress').length || 0;
+  const completedOrders = (orders || []).filter(order => order.status === 'Completed').length || 0;
   
-  const totalRevenue = orders?.reduce((sum, order) => sum + (order.totalAmount || 0), 0) || 0;
-  const outstandingRevenue = orders?.reduce((sum, order) => sum + ((order.totalAmount || 0) - (order.amountPaid || 0)), 0) || 0;
+  const totalRevenue = (orders || []).reduce((sum, order) => sum + (order.totalAmount || 0), 0) || 0;
+  const outstandingRevenue = (orders || []).reduce((sum, order) => sum + ((order.totalAmount || 0) - (order.amountPaid || 0)), 0) || 0;
 
   const recentOrders = [...(orders || [])].sort((a, b) => {
     const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -120,9 +114,7 @@ const DashboardHome: React.FC = () => {
         Welcome back! Here's an overview of your business performance.
       </Typography>
 
-      {/* Stats Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        {/* Orders Card */}
         <Grid item xs={12} sm={6} md={3}>
           <Paper
             elevation={0}
@@ -172,7 +164,6 @@ const DashboardHome: React.FC = () => {
           </Paper>
         </Grid>
 
-        {/* Clients Card */}
         <Grid item xs={12} sm={6} md={3}>
           <Paper
             elevation={0}
@@ -214,7 +205,6 @@ const DashboardHome: React.FC = () => {
           </Paper>
         </Grid>
 
-        {/* Revenue Card */}
         <Grid item xs={12} sm={6} md={3}>
           <Paper
             elevation={0}
@@ -253,7 +243,6 @@ const DashboardHome: React.FC = () => {
           </Paper>
         </Grid>
 
-        {/* Inventory Card */}
         <Grid item xs={12} sm={6} md={3}>
           <Paper
             elevation={0}
@@ -296,7 +285,6 @@ const DashboardHome: React.FC = () => {
         </Grid>
       </Grid>
 
-      {/* Main Dashboard Content */}
       <Grid container spacing={3}>
         {/* Recent Orders */}
         <Grid item xs={12} md={6}>
@@ -313,6 +301,14 @@ const DashboardHome: React.FC = () => {
             <CardContent sx={{ pt: 0 }}>
               {ordersLoading ? (
                 <LinearProgress sx={{ my: 3 }} />
+              ) : ordersError ? (
+                <Box sx={{ textAlign: 'center', py: 3 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {process.env.NODE_ENV === 'development' 
+                      ? 'API not available in development mode' 
+                      : 'Could not load order data'}
+                  </Typography>
+                </Box>
               ) : recentOrders.length === 0 ? (
                 <Box sx={{ textAlign: 'center', py: 3 }}>
                   <Typography variant="body2" color="text.secondary">
@@ -378,7 +374,6 @@ const DashboardHome: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Low Stock Items */}
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%', boxShadow: 'none', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
             <CardHeader
@@ -393,6 +388,14 @@ const DashboardHome: React.FC = () => {
             <CardContent sx={{ pt: 0 }}>
               {inventoryLoading ? (
                 <LinearProgress sx={{ my: 3 }} />
+              ) : inventoryError ? (
+                <Box sx={{ textAlign: 'center', py: 3 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {process.env.NODE_ENV === 'development' 
+                      ? 'API not available in development mode' 
+                      : 'Could not load inventory data'}
+                  </Typography>
+                </Box>
               ) : !lowStockItems || lowStockItems.length === 0 ? (
                 <Box sx={{ textAlign: 'center', py: 3 }}>
                   <Typography variant="body2" color="text.secondary">

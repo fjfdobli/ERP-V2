@@ -1,8 +1,7 @@
-// src/redux/slices/inventorySlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import apiClient from './apiClient';
+import { inventoryService } from '../../services/inventoryService';
 
-// Types
 interface InventoryItem {
   id: string;
   itemName: string;
@@ -38,7 +37,6 @@ interface InventoryState {
   error: string | null;
 }
 
-// Initial state
 const initialState: InventoryState = {
   inventoryItems: [],
   lowStockItems: [],
@@ -48,13 +46,34 @@ const initialState: InventoryState = {
   error: null
 };
 
-// Async actions
+// Map service items to the format expected by the application
+const mapServiceItemToInventoryItem = (item: any): InventoryItem => {
+  return {
+    id: item.id?.toString() || '',
+    itemName: item.item_name || '',
+    itemType: item.type || '',
+    sku: item.sku || '',
+    quantity: item.quantity || 0,
+    unitPrice: 0, // Default as the service doesn't have this
+    minStockLevel: item.min_stock || 0,
+    createdAt: item.created_at
+  };
+};
+
 export const fetchInventory = createAsyncThunk(
   'inventory/fetchInventory',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get('/inventory');
-      return response.data.data;
+      try {
+        // First try the API
+        const response = await apiClient.get('/inventory');
+        return response.data.data;
+      } catch (apiError) {
+        // On API failure, use the inventory service with mock data
+        console.log('API fetch failed, using inventory service');
+        const items = await inventoryService.getInventoryItems();
+        return items.map(mapServiceItemToInventoryItem);
+      }
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch inventory');
     }
@@ -65,8 +84,16 @@ export const fetchLowStockItems = createAsyncThunk(
   'inventory/fetchLowStockItems',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get('/inventory/low-stock');
-      return response.data.data;
+      try {
+        // First try the API
+        const response = await apiClient.get('/inventory/low-stock');
+        return response.data.data;
+      } catch (apiError) {
+        // On API failure, use the inventory service with mock data
+        console.log('API fetch failed, using inventory service for low stock');
+        const items = await inventoryService.getLowStockItems();
+        return items.map(mapServiceItemToInventoryItem);
+      }
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch low stock items');
     }
@@ -77,8 +104,14 @@ export const fetchInventoryItemById = createAsyncThunk(
   'inventory/fetchInventoryItemById',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`/inventory/${id}`);
-      return response.data.data;
+      try {
+        const response = await apiClient.get(`/inventory/${id}`);
+        return response.data.data;
+      } catch (apiError) {
+        // On API failure, use the inventory service with mock data
+        const item = await inventoryService.getInventoryItemById(parseInt(id));
+        return mapServiceItemToInventoryItem(item);
+      }
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch inventory item');
     }
@@ -127,7 +160,6 @@ export const addInventoryTransaction = createAsyncThunk(
   }
 );
 
-// Slice
 const inventorySlice = createSlice({
   name: 'inventory',
   initialState,
@@ -141,7 +173,6 @@ const inventorySlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Fetch inventory
       .addCase(fetchInventory.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -153,9 +184,9 @@ const inventorySlice = createSlice({
       .addCase(fetchInventory.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+        state.inventoryItems = []; // Empty data on error
       })
       
-      // Fetch low stock items
       .addCase(fetchLowStockItems.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -167,9 +198,9 @@ const inventorySlice = createSlice({
       .addCase(fetchLowStockItems.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+        state.lowStockItems = []; // Empty data on error
       })
       
-      // Fetch inventory item by ID
       .addCase(fetchInventoryItemById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -183,7 +214,6 @@ const inventorySlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Create inventory item
       .addCase(createInventoryItem.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -197,7 +227,6 @@ const inventorySlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Update inventory item
       .addCase(updateInventoryItem.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -215,7 +244,6 @@ const inventorySlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Add inventory transaction
       .addCase(addInventoryTransaction.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -224,12 +252,10 @@ const inventorySlice = createSlice({
         state.isLoading = false;
         state.transactions.push(action.payload.transaction);
         
-        // Update the item quantity
         if (state.currentItem && state.currentItem.id === action.payload.transaction.inventoryId) {
           state.currentItem.quantity = action.payload.newQuantity;
         }
         
-        // Update the item in the inventory list
         const index = state.inventoryItems.findIndex(item => 
           item.id === action.payload.transaction.inventoryId
         );

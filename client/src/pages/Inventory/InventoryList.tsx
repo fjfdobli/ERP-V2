@@ -1,21 +1,5 @@
-// src/pages/Inventory/InventoryList.tsx
 import React from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow,
-  Button,
-  TextField,
-  InputAdornment,
-  Chip,
-  LinearProgress
-} from '@mui/material';
+import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Chip, LinearProgress } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon } from '@mui/icons-material';
 
 const InventoryList: React.FC = () => {

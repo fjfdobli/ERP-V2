@@ -1,8 +1,7 @@
-// src/redux/slices/ordersSlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import apiClient from './apiClient';
+import { clientOrdersService } from '../../services/clientOrdersService';
 
-// Types
 interface OrderItem {
   id: string;
   orderId: string;
@@ -42,7 +41,6 @@ interface OrdersState {
   error: string | null;
 }
 
-// Initial state
 const initialState: OrdersState = {
   orders: [],
   currentOrder: null,
@@ -50,13 +48,35 @@ const initialState: OrdersState = {
   error: null
 };
 
-// Async actions
+// Mock data mapping function
+const mapClientOrderToOrder = (clientOrder: any): Order => {
+  return {
+    id: clientOrder.id?.toString() || '',
+    orderId: clientOrder.order_id || '',
+    clientId: clientOrder.client_id?.toString() || '',
+    client: clientOrder.clients ? { name: clientOrder.clients.name } : undefined,
+    title: `Order ₱{clientOrder.order_id}`,
+    status: clientOrder.status || 'Pending',
+    totalAmount: clientOrder.amount || 0,
+    amountPaid: 0, // Default
+    createdAt: clientOrder.created_at
+  };
+};
+
 export const fetchOrders = createAsyncThunk(
   'orders/fetchOrders',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get('/orders');
-      return response.data.data;
+      try {
+        // First try the API
+        const response = await apiClient.get('/orders');
+        return response.data.data;
+      } catch (apiError) {
+        // On API failure, use the client orders service with mock data
+        console.log('API fetch failed, using client orders service');
+        const clientOrders = await clientOrdersService.getClientOrders();
+        return clientOrders.map(mapClientOrderToOrder);
+      }
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch orders');
     }
@@ -67,8 +87,14 @@ export const fetchOrderById = createAsyncThunk(
   'orders/fetchOrderById',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`/orders/${id}`);
-      return response.data.data;
+      try {
+        const response = await apiClient.get(`/orders/${id}`);
+        return response.data.data;
+      } catch (apiError) {
+        // On API failure, use the client orders service with mock data
+        const clientOrder = await clientOrdersService.getClientOrderById(parseInt(id));
+        return mapClientOrderToOrder(clientOrder);
+      }
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch order');
     }
@@ -123,7 +149,6 @@ export const addOrderItem = createAsyncThunk(
   }
 );
 
-// Slice
 const ordersSlice = createSlice({
   name: 'orders',
   initialState,
@@ -137,7 +162,6 @@ const ordersSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Fetch orders
       .addCase(fetchOrders.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -149,9 +173,10 @@ const ordersSlice = createSlice({
       .addCase(fetchOrders.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+        // Provide empty data on error
+        state.orders = [];
       })
       
-      // Fetch order by ID
       .addCase(fetchOrderById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -165,7 +190,6 @@ const ordersSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Create order
       .addCase(createOrder.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -180,7 +204,6 @@ const ordersSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Update order status
       .addCase(updateOrderStatus.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -200,7 +223,6 @@ const ordersSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Process order
       .addCase(processOrder.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -218,7 +240,6 @@ const ordersSlice = createSlice({
         state.error = action.payload as string;
       })
       
-      // Add order item
       .addCase(addOrderItem.pending, (state) => {
         state.isLoading = true;
         state.error = null;

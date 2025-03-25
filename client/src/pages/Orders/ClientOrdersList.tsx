@@ -65,7 +65,7 @@ const ClientOrdersList: React.FC = () => {
                 <TableCell>ORD-2025-0000{row}</TableCell>
                 <TableCell>Client {row}</TableCell>
                 <TableCell>2025-03-{10 + row}</TableCell>
-                <TableCell>${(100 * row).toFixed(2)}</TableCell>
+                <TableCell>₱{(100 * row).toFixed(2)}</TableCell>
                 <TableCell>
                   <Chip 
                     label={row % 3 === 0 ? 'Completed' : row % 2 === 0 ? 'In Progress' : 'Pending'} 

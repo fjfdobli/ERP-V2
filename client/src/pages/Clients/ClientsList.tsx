@@ -1,44 +1,11 @@
-// client/src/pages/Clients/ClientsList.tsx
-import React, { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Typography, 
-  Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow,
-  Button,
-  TextField,
-  InputAdornment,
-  Avatar,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Grid,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Snackbar,
-  Alert,
-  SelectChangeEvent,
-  Divider,
-  FormControlLabel,
-  Checkbox,
-  Tab,
-  Tabs
-} from '@mui/material';
-import { Add as AddIcon, Search as SearchIcon, Business, Person, Payments, Info } from '@mui/icons-material';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Avatar, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, FormControl, InputLabel, Select, MenuItem, Snackbar, Alert, SelectChangeEvent, Divider, FormControlLabel, Checkbox, Tab, Tabs } from '@mui/material';
+import { Add as AddIcon, Search as SearchIcon, Business, Person, Payments, Info, Refresh as RefreshIcon } from '@mui/icons-material';
 import { clientsService, Client, InsertClient } from '../../services/clientsService';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { supabase } from '../../supabaseClient';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -66,85 +33,140 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
+const testSupabaseConnection = async () => {
+  try {
+    const { data, error } = await supabase.from('clients').select('count');
+    
+    if (error) {
+      console.error('Supabase connection error:', error);
+      return { success: false, error: error.message };
+    }
+    
+    return { 
+      success: true, 
+      message: 'Connected to Supabase successfully',
+      data 
+    };
+  } catch (err) {
+    const error = err as Error;
+    console.error('Unexpected error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+const validateClientsTable = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .limit(1);
+    
+    if (error) {
+      console.error('Error validating clients table:', error);
+      return { 
+        success: false, 
+        error: error.message,
+        suggestion: 'Make sure the clients table exists and has the correct permissions'
+      };
+    }
+    
+    if (data && data.length > 0) {
+      console.log('Table structure sample:', Object.keys(data[0]));
+      const requiredFields = ['id', 'name', 'contactPerson', 'email', 'phone', 'status'];
+      const missingFields = requiredFields.filter(field => !Object.keys(data[0]).includes(field));
+      
+      if (missingFields.length > 0) {
+        return {
+          success: false,
+          message: 'Table exists but is missing required fields',
+          missingFields
+        };
+      }
+      
+      return {
+        success: true,
+        message: 'Clients table exists and has the correct structure',
+        sampleData: data[0]
+      };
+    }
+    
+    return {
+      success: true,
+      message: 'Clients table exists but contains no data'
+    };
+  } catch (err) {
+    const error = err as Error;
+    console.error('Unexpected error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+interface ClientFormData {
+  name: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  status: string;
+  businessType: string;
+  taxId: string;
+  industry: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  alternatePhone: string;
+  billingAddressSame: boolean;
+  billing_address_line1: string;
+  billing_address_line2: string;
+  billing_city: string;
+  billing_state: string;
+  billing_postal_code: string;
+  paymentTerms: string;
+  creditLimit: number;
+  taxExempt: boolean;
+  specialRequirements: string;
+  acquisition_date: Date | null;
+  notes: string;
+  createdAt?: string;
+}
+
 const ClientsList: React.FC = () => {
-  // State
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [tabValue, setTabValue] = useState(0);
-  const [formData, setFormData] = useState<InsertClient & {
-    // Business details
-    business_type?: string;
-    tax_id?: string;
-    industry?: string;
-    website?: string;
-    
-    // Additional contact details
-    address_line1?: string;
-    address_line2?: string;
-    city?: string;
-    state?: string;
-    postal_code?: string;
-    alternate_phone?: string;
-    
-    // Billing details
-    billing_address_same?: boolean;
-    billing_address_line1?: string;
-    billing_address_line2?: string;
-    billing_city?: string;
-    billing_state?: string;
-    billing_postal_code?: string;
-    payment_terms?: string;
-    credit_limit?: number;
-    tax_exempt?: boolean;
-    
-    // Printing preferences
-    special_requirements?: string;
-    
-    // Notes and metadata
-    acquisition_date?: Date | null;
-    notes?: string;
-  }>({
+  const [formData, setFormData] = useState<ClientFormData>({
     name: '',
-    contact_person: '',
+    contactPerson: '',
     email: '',
     phone: '',
     status: 'Regular',
-    
-    // Business details
-    business_type: 'Company',
-    tax_id: '',
+    businessType: 'Company',
+    taxId: '',
     industry: '',
-    website: '',
-    
-    // Additional contact details
     address_line1: '',
     address_line2: '',
     city: '',
     state: '',
     postal_code: '',
-    alternate_phone: '',
-    
-    // Billing details
-    billing_address_same: true,
+    alternatePhone: '',
+    billingAddressSame: true,
     billing_address_line1: '',
     billing_address_line2: '',
     billing_city: '',
     billing_state: '',
     billing_postal_code: '',
-    payment_terms: 'Net 30',
-    credit_limit: 5000,
-    tax_exempt: false,
-    
-    // Printing preferences
-    special_requirements: '',
-    
-    // Notes and metadata
+    paymentTerms: '30 Days Term',
+    creditLimit: 5000,
+    taxExempt: false,
+    specialRequirements: '',
     acquisition_date: new Date(),
     notes: ''
   });
+
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
@@ -155,25 +177,85 @@ const ClientsList: React.FC = () => {
     severity: 'success'
   });
 
-  // Constants for form options
   const businessTypes = ['Company', 'Organization', 'Government', 'Educational', 'Individual', 'Other'];
   const industries = ['Publishing', 'Marketing', 'Advertising', 'Education', 'Government', 'Retail', 'Healthcare', 'Financial', 'Technology', 'Manufacturing', 'Nonprofit', 'Other'];
-  const paymentTerms = ['Prepaid', 'COD', 'Net 15', 'Net 30', 'Net 45', 'Net 60', 'Credit Card'];
+  const paymentTerms = [
+    'Cash on Delivery (COD)',
+    'Cash Before Delivery (CBD)',
+    '7 Days PDC',
+    '15 Days PDC',
+    '30 Days PDC',
+    'Cash on Pickup (COP)',
+    '50% DP, 50% on Delivery',
+    '30% DP, 70% on Delivery',
+    'Cash Terms',
+    '7 Days Term',
+    '15 Days Term',
+    '30 Days Term',
+    'GCash/Digital Payment',
+    'Credit Card',
+    'Monthly Direct Debit'
+  ];
 
-  // Fetch clients on component mount
-  useEffect(() => {
-    const fetchClientsData = async () => {
-      await fetchClients();
-    };
-    
-    fetchClientsData();
+  const showSnackbar = useCallback((message: string, severity: 'success' | 'error') => {
+    setSnackbar({ open: true, message, severity });
   }, []);
 
-  // Fetch clients from API
-  const fetchClients = async () => {
+  const troubleshootDataIssue = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('Troubleshooting data issue...');
+      
+      // Check direct database connection
+      const { data: directData, error: directError } = await supabase
+        .from('clients')
+        .select('*');
+        
+      if (directError) {
+        console.error('Direct database query error:', directError);
+        showSnackbar('Database connection error', 'error');
+        return;
+      }
+      
+      console.log('Direct database query results:', directData);
+      
+      if (!directData || directData.length === 0) {
+        console.log('No data found in direct database query');
+        showSnackbar('No clients found in the database', 'error');
+      } else {
+        console.log(`Found ${directData.length} records directly in database`);
+        
+        // Check if service layer is failing
+        try {
+          const serviceData = await clientsService.getClients();
+          console.log('Service layer returned:', serviceData);
+          
+          if (!serviceData || serviceData.length === 0) {
+            console.log('Service layer returned empty results despite data in database');
+            showSnackbar('Service layer issue - check console logs', 'error');
+          } else {
+            setClients(serviceData);
+            showSnackbar(`Successfully loaded ${serviceData.length} clients`, 'success');
+          }
+        } catch (serviceError) {
+          console.error('Service layer error:', serviceError);
+          showSnackbar('Error in service layer', 'error');
+        }
+      }
+    } catch (error) {
+      console.error('Troubleshooting failed:', error);
+      showSnackbar('Troubleshooting failed', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [showSnackbar]);
+
+  const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
+      console.log('Fetching clients...');
       const data = await clientsService.getClients();
+      console.log('Fetched clients data:', data);
       setClients(data);
     } catch (error) {
       console.error('Error fetching clients:', error);
@@ -181,9 +263,35 @@ const ClientsList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showSnackbar]);
 
-  // Handle search
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const connectionTest = await testSupabaseConnection();
+        console.log('Connection test result:', connectionTest);
+        
+        const tableValidation = await validateClientsTable();
+        console.log('Table validation result:', tableValidation);
+        
+        if (!connectionTest.success) {
+          showSnackbar('Failed to connect to the database: ' + connectionTest.error, 'error');
+        } else if (!tableValidation.success) {
+          showSnackbar('Database table issue: ' + (tableValidation.error || tableValidation.message), 'error');
+        }
+      } catch (error) {
+        console.error('Test error:', error);
+        showSnackbar('Connection test failed', 'error');
+      }
+    };
+    
+    testConnection();
+  }, [showSnackbar]);
+
+  useEffect(() => {
+    fetchClients();
+  }, [fetchClients]);
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
       fetchClients();
@@ -202,69 +310,65 @@ const ClientsList: React.FC = () => {
     }
   };
 
-  // Handle dialog open
   const handleOpenDialog = (client?: Client) => {
     if (client) {
       setSelectedClient(client);
-      // In a real app, we would fetch the complete client details here
       setFormData({
         name: client.name,
-        contact_person: client.contact_person,
+        contactPerson: client.contactPerson,
         email: client.email,
         phone: client.phone,
-        status: client.status,
-        // Default values for other fields would be populated from complete client data
-        business_type: 'Company',
-        tax_id: '',
-        industry: '',
-        website: '',
+        status: client.status || 'Regular',
+        createdAt: client.createdAt,
+        businessType: client.businessType || 'Company',
+        taxId: client.taxId || '',
+        industry: client.industry || '',
         address_line1: '',
         address_line2: '',
         city: '',
         state: '',
         postal_code: '',
-        alternate_phone: '',
-        billing_address_same: true,
+        alternatePhone: client.alternatePhone || '',
+        billingAddressSame: client.billingAddressSame !== false,
         billing_address_line1: '',
         billing_address_line2: '',
         billing_city: '',
         billing_state: '',
         billing_postal_code: '',
-        payment_terms: 'Net 30',
-        credit_limit: 5000,
-        tax_exempt: false,
-        special_requirements: '',
-        acquisition_date: new Date(),
-        notes: ''
+        paymentTerms: client.paymentTerms || '30 Days Term',
+        creditLimit: client.creditLimit || 5000,
+        taxExempt: client.taxExempt || false,
+        specialRequirements: client.specialRequirements || '',
+        acquisition_date: client.clientSince ? new Date(client.clientSince) : new Date(),
+        notes: client.notes || ''
       });
     } else {
       setSelectedClient(null);
       setFormData({
         name: '',
-        contact_person: '',
+        contactPerson: '',
         email: '',
         phone: '',
         status: 'Regular',
-        business_type: 'Company',
-        tax_id: '',
+        businessType: 'Company',
+        taxId: '',
         industry: '',
-        website: '',
         address_line1: '',
         address_line2: '',
         city: '',
         state: '',
         postal_code: '',
-        alternate_phone: '',
-        billing_address_same: true,
+        alternatePhone: '',
+        billingAddressSame: true,
         billing_address_line1: '',
         billing_address_line2: '',
         billing_city: '',
         billing_state: '',
         billing_postal_code: '',
-        payment_terms: 'Net 30',
-        credit_limit: 5000,
-        tax_exempt: false,
-        special_requirements: '',
+        paymentTerms: '30 Days Term',
+        creditLimit: 5000,
+        taxExempt: false,
+        specialRequirements: '',
         acquisition_date: new Date(),
         notes: ''
       });
@@ -273,18 +377,15 @@ const ClientsList: React.FC = () => {
     setTabValue(0);
   };
 
-  // Handle dialog close
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedClient(null);
   };
 
-  // Handle tab change
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
 
-  // Handle text input change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -293,16 +394,14 @@ const ClientsList: React.FC = () => {
     }));
   };
 
-  // Handle select input change
   const handleSelectChange = (e: SelectChangeEvent) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name as string]: value
+      [name]: value
     }));
   };
 
-  // Handle checkbox change
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, checked } = e.target;
     setFormData(prev => ({
@@ -310,8 +409,7 @@ const ClientsList: React.FC = () => {
       [name]: checked
     }));
     
-    // If billing address same is checked, copy the main address
-    if (name === 'billing_address_same' && checked) {
+    if (name === 'billingAddressSame' && checked) {
       setFormData(prev => ({
         ...prev,
         billing_address_line1: prev.address_line1 || '',
@@ -323,7 +421,6 @@ const ClientsList: React.FC = () => {
     }
   };
 
-  // Handle date change
   const handleDateChange = (date: Date | null) => {
     setFormData(prev => ({
       ...prev,
@@ -331,58 +428,90 @@ const ClientsList: React.FC = () => {
     }));
   };
 
-  // Handle form submission
   const handleSubmit = async () => {
-    if (!formData.name || !formData.contact_person) {
+    if (!formData.name || !formData.contactPerson) {
       showSnackbar('Client name and contact person are required', 'error');
       return;
     }
 
     setLoading(true);
     try {
-      // Prepare client data for API
-      // In a real implementation, we would map the extended form data to the API schema
+      const formattedAddress = formData.address_line1 ? 
+        [
+          formData.address_line1,
+          formData.address_line2,
+          formData.city,
+          formData.state,
+          formData.postal_code
+        ].filter(Boolean).join(', ') : null;
+      
+      const formattedBillingAddress = !formData.billingAddressSame && formData.billing_address_line1 ? 
+        [
+          formData.billing_address_line1,
+          formData.billing_address_line2,
+          formData.billing_city,
+          formData.billing_state,
+          formData.billing_postal_code
+        ].filter(Boolean).join(', ') : null;
+
+      let clientSince: string | undefined = undefined;
+      if (formData.acquisition_date) {
+        clientSince = formData.acquisition_date.toISOString().split('T')[0]; 
+      }
+      
       const clientData: InsertClient = {
         name: formData.name,
-        contact_person: formData.contact_person,
-        email: formData.email,
-        phone: formData.phone,
-        status: formData.status
-        // Additional fields would be included depending on your API/database schema
+        contactPerson: formData.contactPerson,
+        email: formData.email || '',
+        phone: formData.phone || '',
+        status: formData.status,
+        address: formattedAddress,
+        notes: formData.notes || '',
+        businessType: formData.businessType || 'Company',
+        industry: formData.industry || '',
+        taxId: formData.taxId || '',
+        clientSince: clientSince,
+        alternatePhone: formData.alternatePhone || '',
+        billingAddressSame: formData.billingAddressSame,
+        billingAddress: formattedBillingAddress,
+        paymentTerms: formData.paymentTerms || '30 Days Term',
+        creditLimit: Number(formData.creditLimit) || 5000,
+        taxExempt: Boolean(formData.taxExempt),
+        specialRequirements: formData.specialRequirements || ''
       };
 
-      if (selectedClient) {
-        // Update existing client
-        await clientsService.updateClient(selectedClient.id, clientData);
+      console.log('Submitting client data:', clientData);
+
+      let result;
+      if (selectedClient && selectedClient.id) {
+        console.log('Updating client with ID:', selectedClient.id, 'Type:', typeof selectedClient.id);
+        const clientId = typeof selectedClient.id === 'string' 
+          ? parseInt(selectedClient.id, 10) 
+          : selectedClient.id;
+          
+        result = await clientsService.updateClient(clientId, clientData);
+        console.log('Updated client result:', result);
         showSnackbar('Client updated successfully', 'success');
       } else {
-        // Create new client
-        await clientsService.createClient(clientData);
+        result = await clientsService.createClient(clientData);
+        console.log('Created client result:', result);
         showSnackbar('Client created successfully', 'success');
       }
       
-      // Refresh client list
-      fetchClients();
+      await fetchClients();
       handleCloseDialog();
     } catch (error) {
       console.error('Error saving client:', error);
-      showSnackbar('Failed to save client', 'error');
+      showSnackbar('Failed to save client: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // Show snackbar
-  const showSnackbar = (message: string, severity: 'success' | 'error') => {
-    setSnackbar({ open: true, message, severity });
-  };
-
-  // Close snackbar
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
-  // Generate avatar color based on client name
   const getAvatarColor = (name: string) => {
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -392,7 +521,6 @@ const ClientsList: React.FC = () => {
     return `hsl(${h}, 70%, 50%)`;
   };
 
-  // Get client initials for avatar
   const getInitials = (name: string) => {
     const parts = name.split(' ');
     if (parts.length >= 2) {
@@ -440,10 +568,23 @@ const ClientsList: React.FC = () => {
         >
           Filter
         </Button>
-        <Button variant="outlined">Export</Button>
+        <Button 
+          variant="outlined"
+          sx={{ mr: 1 }}
+        >
+          Export
+        </Button>
+        <Button 
+          variant="outlined"
+          color="secondary"
+          startIcon={<RefreshIcon />}
+          onClick={troubleshootDataIssue}
+        >
+          Refresh Data
+        </Button>
       </Box>
 
-      {loading && clients.length === 0 ? (
+      {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
           <CircularProgress />
         </Box>
@@ -474,19 +615,19 @@ const ClientsList: React.FC = () => {
                         </Typography>
                       </Box>
                     </TableCell>
-                    <TableCell>{client.contact_person}</TableCell>
+                    <TableCell>{client.contactPerson}</TableCell>
                     <TableCell>{client.email}</TableCell>
                     <TableCell>{client.phone}</TableCell>
                     <TableCell>
                       <Chip 
                         label={client.status} 
-                        color={client.status === 'VIP' ? 'secondary' : 'default'}
+                        color={client.status === '' ? 'secondary' : (client.status === 'New' ? 'primary' : 'default')}
                         size="small"
                       />
                     </TableCell>
                     <TableCell>
-                      <Button size="small" onClick={() => handleOpenDialog(client)}>View</Button>
-                      <Button size="small" onClick={() => handleOpenDialog(client)}>Edit</Button>
+                      <Button size="small">View</Button>
+                      <Button size="small">Edit</Button>
                     </TableCell>
                   </TableRow>
                 ))
@@ -502,7 +643,6 @@ const ClientsList: React.FC = () => {
         </TableContainer>
       )}
 
-      {/* Client Form Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="lg" fullWidth>
         <DialogTitle>
           {selectedClient ? `Edit Client: ${selectedClient.name}` : 'Add New Client'}
@@ -541,8 +681,8 @@ const ClientsList: React.FC = () => {
                   <InputLabel id="business-type-label">Business Type</InputLabel>
                   <Select
                     labelId="business-type-label"
-                    name="business_type"
-                    value={formData.business_type}
+                    name="businessType"
+                    value={formData.businessType}
                     label="Business Type"
                     onChange={handleSelectChange}
                   >
@@ -555,10 +695,10 @@ const ClientsList: React.FC = () => {
               
               <Grid item xs={12} md={6}>
                 <TextField
-                  name="tax_id"
+                  name="taxId"
                   label="TIN"
                   fullWidth
-                  value={formData.tax_id}
+                  value={formData.taxId}
                   onChange={handleInputChange}
                 />
               </Grid>
@@ -581,16 +721,6 @@ const ClientsList: React.FC = () => {
               </Grid>
               
               <Grid item xs={12} md={6}>
-                <TextField
-                  name="website"
-                  label="Website"
-                  fullWidth
-                  value={formData.website}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
                 <FormControl fullWidth>
                   <InputLabel id="status-label">Client Status</InputLabel>
                   <Select
@@ -601,7 +731,6 @@ const ClientsList: React.FC = () => {
                     onChange={handleSelectChange}
                   >
                     <MenuItem value="Regular">Regular</MenuItem>
-                    <MenuItem value="VIP">VIP</MenuItem>
                     <MenuItem value="New">New</MenuItem>
                     <MenuItem value="Inactive">Inactive</MenuItem>
                   </Select>
@@ -631,11 +760,11 @@ const ClientsList: React.FC = () => {
               
               <Grid item xs={12} md={6}>
                 <TextField
-                  name="contact_person"
+                  name="contactPerson"
                   label="Contact Person Name"
                   fullWidth
                   required
-                  value={formData.contact_person}
+                  value={formData.contactPerson}
                   onChange={handleInputChange}
                 />
               </Grid>
@@ -663,10 +792,10 @@ const ClientsList: React.FC = () => {
               
               <Grid item xs={12} md={6}>
                 <TextField
-                  name="alternate_phone"
+                  name="alternatePhone"
                   label="Alternate Phone"
                   fullWidth
-                  value={formData.alternate_phone}
+                  value={formData.alternatePhone}
                   onChange={handleInputChange}
                 />
               </Grid>
@@ -742,9 +871,9 @@ const ClientsList: React.FC = () => {
                 <FormControlLabel
                   control={
                     <Checkbox
-                      checked={formData.billing_address_same}
+                      checked={formData.billingAddressSame}
                       onChange={handleCheckboxChange}
-                      name="billing_address_same"
+                      name="billingAddressSame"
                       color="primary"
                     />
                   }
@@ -752,7 +881,7 @@ const ClientsList: React.FC = () => {
                 />
               </Grid>
               
-              {!formData.billing_address_same && (
+              {!formData.billingAddressSame && (
                 <>
                   <Grid item xs={12}>
                     <TextField
@@ -793,145 +922,144 @@ const ClientsList: React.FC = () => {
                       onChange={handleInputChange}
                     />
                   </Grid>
-                  
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      name="billing_postal_code"
-                      label="Postal Code"
-                      fullWidth
-                      value={formData.billing_postal_code}
-                      onChange={handleInputChange}
-                    />
-                  </Grid>
-                </>
-              )}
-              
-              <Grid item xs={12}>
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="h6" gutterBottom>
-                  Payment Details
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth>
-                  <InputLabel id="payment-terms-label">Payment Terms</InputLabel>
-                  <Select
-                    labelId="payment-terms-label"
-                    name="payment_terms"
-                    value={formData.payment_terms}
-                    label="Payment Terms"
-                    onChange={handleSelectChange}
-                  >
-                    {paymentTerms.map((term) => (
-                      <MenuItem key={term} value={term}>{term}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <TextField
-                  name="credit_limit"
-                  label="Credit Limit (₱)"
-                  type="number"
-                  fullWidth
-                  value={formData.credit_limit}
-                  onChange={handleInputChange}
-                  InputProps={{
-                    startAdornment: <InputAdornment position="start">₱</InputAdornment>,
-                  }}
-                />
-              </Grid>
-              
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={formData.tax_exempt}
-                      onChange={handleCheckboxChange}
-                      name="tax_exempt"
-                      color="primary"
-                    />
-                  }
-                  label="Tax Exempt"
-                />
-              </Grid>
-            </Grid>
-          </TabPanel>
-          
-          <TabPanel value={tabValue} index={3}>
-            <Grid container spacing={3}>
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom>
-                  Printing Preferences
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12}>
-                <TextField
-                  name="special_requirements"
-                  label="Special Requirements or Preferences"
-                  multiline
-                  rows={4}
-                  fullWidth
-                  value={formData.special_requirements}
-                  onChange={handleInputChange}
-                  placeholder="Enter any special requirements or preferences for printing jobs"
-                />
-              </Grid>
-              
-              <Grid item xs={12}>
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="h6" gutterBottom>
-                  Notes
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12}>
-                <TextField
-                  name="notes"
-                  label="General Notes"
-                  multiline
-                  rows={4}
-                  fullWidth
-                  value={formData.notes}
-                  onChange={handleInputChange}
-                  placeholder="Add any additional information about this client's specific needs, history, or other important details."
-                />
-              </Grid>
-            </Grid>
-          </TabPanel>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button 
-            onClick={handleSubmit} 
-            variant="contained" 
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={24} /> : 'Save Client'}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
-      {/* Snackbar for notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={6000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert 
-          onClose={handleCloseSnackbar} 
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
-  );
+                  <Grid item xs={12} md={6}>
+                   <TextField
+                     name="billing_postal_code"
+                     label="Postal Code"
+                     fullWidth
+                     value={formData.billing_postal_code}
+                     onChange={handleInputChange}
+                   />
+                 </Grid>
+               </>
+             )}
+             
+             <Grid item xs={12}>
+               <Divider sx={{ my: 2 }} />
+               <Typography variant="h6" gutterBottom>
+                 Payment Details
+               </Typography>
+             </Grid>
+             
+             <Grid item xs={12} md={6}>
+               <FormControl fullWidth>
+                 <InputLabel id="payment-terms-label">Payment Terms</InputLabel>
+                 <Select
+                   labelId="payment-terms-label"
+                   name="paymentTerms"
+                   value={formData.paymentTerms}
+                   label="Payment Terms"
+                   onChange={handleSelectChange}
+                 >
+                   {paymentTerms.map((term) => (
+                     <MenuItem key={term} value={term}>{term}</MenuItem>
+                   ))}
+                 </Select>
+               </FormControl>
+             </Grid>
+             
+             <Grid item xs={12} md={6}>
+               <TextField
+                 name="creditLimit"
+                 label="Credit Limit (₱)"
+                 type="number"
+                 fullWidth
+                 value={formData.creditLimit}
+                 onChange={handleInputChange}
+                 InputProps={{
+                   startAdornment: <InputAdornment position="start">₱</InputAdornment>,
+                 }}
+               />
+             </Grid>
+             
+             <Grid item xs={12}>
+               <FormControlLabel
+                 control={
+                   <Checkbox
+                     checked={formData.taxExempt}
+                     onChange={handleCheckboxChange}
+                     name="taxExempt"
+                     color="primary"
+                   />
+                 }
+                 label="Tax Exempt"
+               />
+             </Grid>
+           </Grid>
+         </TabPanel>
+         
+         <TabPanel value={tabValue} index={3}>
+           <Grid container spacing={3}>
+             <Grid item xs={12}>
+               <Typography variant="h6" gutterBottom>
+                 Printing Preferences
+               </Typography>
+             </Grid>
+             
+             <Grid item xs={12}>
+               <TextField
+                 name="specialRequirements"
+                 label="Special Requirements or Preferences"
+                 multiline
+                 rows={4}
+                 fullWidth
+                 value={formData.specialRequirements}
+                 onChange={handleInputChange}
+                 placeholder="Enter any special requirements or preferences for printing jobs"
+               />
+             </Grid>
+             
+             <Grid item xs={12}>
+               <Divider sx={{ my: 2 }} />
+               <Typography variant="h6" gutterBottom>
+                 Notes
+               </Typography>
+             </Grid>
+             
+             <Grid item xs={12}>
+               <TextField
+                 name="notes"
+                 label="General Notes"
+                 multiline
+                 rows={4}
+                 fullWidth
+                 value={formData.notes}
+                 onChange={handleInputChange}
+                 placeholder="Add any additional information about this client's specific needs, history, or other important details."
+               />
+             </Grid>
+           </Grid>
+         </TabPanel>
+       </DialogContent>
+       <DialogActions>
+         <Button onClick={handleCloseDialog}>Cancel</Button>
+         <Button 
+           onClick={handleSubmit} 
+           variant="contained" 
+           disabled={loading}
+         >
+           {loading ? <CircularProgress size={24} /> : 'Save Client'}
+         </Button>
+       </DialogActions>
+     </Dialog>
+
+     <Snackbar
+       open={snackbar.open}
+       autoHideDuration={6000}
+       onClose={handleCloseSnackbar}
+       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+     >
+       <Alert 
+         onClose={handleCloseSnackbar} 
+         severity={snackbar.severity}
+         sx={{ width: '100%' }}
+       >
+         {snackbar.message}
+       </Alert>
+     </Snackbar>
+   </Box>
+ );
 };
 
 export default ClientsList;

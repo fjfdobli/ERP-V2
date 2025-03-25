@@ -1,26 +1,25 @@
-// src/theme.js
 import { createTheme } from '@mui/material/styles';
 
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#1976d2', // Professional blue color
+      main: '#1976d2', 
       light: '#4791db',
       dark: '#115293',
       contrastText: '#fff',
     },
     secondary: {
-      main: '#dc004e', // Accent color for important buttons/elements
+      main: '#dc004e', 
       light: '#e33371',
       dark: '#9a0036',
       contrastText: '#fff',
     },
     background: {
-      default: '#f5f7fa', // Light gray background
+      default: '#f5f7fa', 
       paper: '#ffffff',
     },
     text: {
-      primary: '#2a3241', // Dark blue-gray for better readability
+      primary: '#2a3241', 
       secondary: '#5f6b7c',
     },
     error: {
@@ -64,12 +63,12 @@ const theme = createTheme({
       fontWeight: 600,
     },
     button: {
-      textTransform: 'none', // Avoid all-caps buttons for better readability
+      textTransform: 'none', 
       fontWeight: 500,
     },
   },
   shape: {
-    borderRadius: 8, // Slightly rounded corners for a modern look
+    borderRadius: 8, 
   },
   components: {
     MuiButton: {
