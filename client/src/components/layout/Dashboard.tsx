@@ -1,58 +1,12 @@
-// src/components/layout/Dashboard.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
-import {
-  AppBar,
-  Box,
-  CssBaseline,
-  Divider,
-  Drawer,
-  IconButton,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Toolbar,
-  Typography,
-  Button,
-  Avatar,
-  Menu,
-  MenuItem,
-  Tooltip,
-  Badge,
-  useMediaQuery,
-  Collapse
-} from '@mui/material';
-import {
-  Menu as MenuIcon,
-  Dashboard as DashboardIcon,
-  People as ClientsIcon,
-  ShoppingCart as OrdersIcon,
-  Inventory as InventoryIcon,
-  Group as EmployeesIcon,
-  LocalShipping as SuppliersIcon,
-  Build as MachineryIcon,
-  BarChart as ReportsIcon,
-  Notifications as NotificationsIcon,
-  AccountCircle,
-  Settings,
-  ExitToApp,
-  ChevronLeft,
-  ExpandLess,
-  ExpandMore,
-  RequestQuote as RequestIcon,
-  ImportContacts as ClientRequestIcon,
-  Source as SupplierRequestIcon,
-  Payments as PayrollIcon
-} from '@mui/icons-material';
+import { AppBar, Box, CssBaseline, Divider, Drawer, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, Button, Avatar, Menu, MenuItem, Tooltip, Badge, useMediaQuery, Collapse } from '@mui/material';
+import { Menu as MenuIcon, Dashboard as DashboardIcon, People as ClientsIcon, ShoppingCart as OrdersIcon, Inventory as InventoryIcon, Group as EmployeesIcon, LocalShipping as SuppliersIcon, Build as MachineryIcon, BarChart as ReportsIcon, Notifications as NotificationsIcon, AccountCircle, Settings, ExitToApp, ChevronLeft, ExpandLess, ExpandMore, RequestQuote as RequestIcon, ImportContacts as ClientRequestIcon, Source as SupplierRequestIcon, Payments as PayrollIcon } from '@mui/icons-material';
 import PrintIcon from '@mui/icons-material/Print';
 
 const drawerWidth = 260;
-
-// Updated menu items with nested structure for Orders
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'Clients', icon: <ClientsIcon />, path: '/clients' },
@@ -112,6 +66,16 @@ const DashboardLayout: React.FC = () => {
 
   const handleUserMenuClose = () => {
     setUserMenuAnchor(null);
+  };
+
+  const handleProfileClick = () => {
+    setUserMenuAnchor(null);
+    navigate('/profile');
+  };
+
+  const handleSettingsClick = () => {
+    setUserMenuAnchor(null);
+    navigate('/settings');
   };
 
   interface NotificationsOpenEvent extends React.MouseEvent<HTMLButtonElement> {}
@@ -311,6 +275,8 @@ const DashboardLayout: React.FC = () => {
     if (location.pathname.includes('/orders/clients')) return 'Client Orders';
     if (location.pathname.includes('/orders/suppliers')) return 'Supplier Orders';
     if (location.pathname.includes('/dashboard')) return 'Dashboard';
+    if (location.pathname.includes('/profile')) return 'My Profile';
+    if (location.pathname.includes('/settings')) return 'Settings';
     
     const pathSegments = location.pathname.split('/');
     const lastSegment = pathSegments[pathSegments.length - 1];
@@ -324,7 +290,6 @@ const DashboardLayout: React.FC = () => {
     <Box sx={{ display: 'flex', height: '100vh' }}>
       <CssBaseline />
       
-      {/* App Bar */}
       <AppBar
         position="fixed"
         sx={{
@@ -353,7 +318,6 @@ const DashboardLayout: React.FC = () => {
             {getPageTitle()}
           </Typography>
           
-          {/* Notifications */}
           <Tooltip title="Notifications">
             <IconButton 
               color="inherit" 
@@ -421,7 +385,6 @@ const DashboardLayout: React.FC = () => {
             </Box>
           </Menu>
           
-          {/* User Menu */}
           <Button
             onClick={handleUserMenuOpen}
             color="inherit"
@@ -455,13 +418,13 @@ const DashboardLayout: React.FC = () => {
             transformOrigin={{ horizontal: 'right', vertical: 'top' }}
             anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
           >
-            <MenuItem onClick={handleUserMenuClose}>
+            <MenuItem onClick={handleProfileClick}>
               <ListItemIcon>
                 <AccountCircle fontSize="small" />
               </ListItemIcon>
               <ListItemText>My Profile</ListItemText>
             </MenuItem>
-            <MenuItem onClick={handleUserMenuClose}>
+            <MenuItem onClick={handleSettingsClick}>
               <ListItemIcon>
                 <Settings fontSize="small" />
               </ListItemIcon>
@@ -478,19 +441,17 @@ const DashboardLayout: React.FC = () => {
         </Toolbar>
       </AppBar>
       
-      {/* Sidebar */}
       <Box
         component="nav"
         sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
         aria-label="mailbox folders"
       >
-        {/* Mobile drawer */}
         <Drawer
           variant="temporary"
           open={mobileOpen}
           onClose={handleDrawerToggle}
           ModalProps={{
-            keepMounted: true, // Better open performance on mobile
+            keepMounted: true,
           }}
           sx={{
             display: { xs: 'block', md: 'none' },
@@ -504,7 +465,6 @@ const DashboardLayout: React.FC = () => {
           {drawer}
         </Drawer>
         
-        {/* Desktop drawer */}
         <Drawer
           variant="permanent"
           sx={{
@@ -521,7 +481,6 @@ const DashboardLayout: React.FC = () => {
         </Drawer>
       </Box>
       
-      {/* Main content */}
       <Box
         component="main"
         sx={{
@@ -534,8 +493,8 @@ const DashboardLayout: React.FC = () => {
           flexDirection: 'column'
         }}
       >
-        <Toolbar /> {/* This creates space for the fixed AppBar */}
-        <Outlet /> {/* Render nested route components */}
+        <Toolbar />
+        <Outlet /> 
       </Box>
     </Box>
   );

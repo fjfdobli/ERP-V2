@@ -8,6 +8,18 @@ interface User {
   firstName?: string;
   lastName?: string;
   role?: string;
+  phone?: string;
+  jobTitle?: string;
+  settings?: UserSettings;
+}
+
+interface UserSettings {
+  emailNotifications?: boolean;
+  appNotifications?: boolean;
+  darkMode?: boolean;
+  language?: string;
+  theme?: string;
+  twoFactorAuth?: boolean;
 }
 
 interface AuthState {
@@ -26,19 +38,17 @@ const initialState: AuthState = {
   error: null
 };
 
-// Helper function to create or get user profile
 const getOrCreateUserProfile = async (authUser: any) => {
   if (!authUser) return null;
   
   try {
-    // Check if user profile exists
     const { data: existingProfile, error: fetchError } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('auth_user_id', authUser.id)
       .single();
 
-    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 means no rows returned
+    if (fetchError && fetchError.code !== 'PGRST116') { 
       console.error('Error fetching user profile:', fetchError);
       throw new Error(`Error fetching user profile: ${fetchError.message}`);
     }
@@ -50,11 +60,13 @@ const getOrCreateUserProfile = async (authUser: any) => {
         email: authUser.email,
         firstName: authUser.user_metadata?.firstName || existingProfile.first_name,
         lastName: authUser.user_metadata?.lastName || existingProfile.last_name,
-        role: existingProfile.role
+        role: existingProfile.role,
+        phone: existingProfile.phone,
+        jobTitle: existingProfile.job_title,
+        settings: existingProfile.settings
       };
     }
 
-    // If we don't find a profile, create one
     const { data: newProfile, error: insertError } = await supabase
       .from('user_profiles')
       .insert([
@@ -79,13 +91,15 @@ const getOrCreateUserProfile = async (authUser: any) => {
       email: authUser.email,
       firstName: authUser.user_metadata?.firstName || newProfile.first_name,
       lastName: authUser.user_metadata?.lastName || newProfile.last_name,
-      role: newProfile.role
+      role: newProfile.role,
+      phone: newProfile.phone,
+      jobTitle: newProfile.job_title,
+      settings: newProfile.settings
     };
   } catch (error) {
     console.error('Error in getOrCreateUserProfile:', error);
-    // Return a basic profile with just the auth data to prevent the app from breaking
     return {
-      id: 0, // Placeholder ID
+      id: 0,
       auth_id: authUser.id,
       email: authUser.email,
       firstName: authUser.user_metadata?.firstName,
@@ -121,7 +135,6 @@ export const login = createAsyncThunk(
           user: userProfile 
         };
       } catch (profileError: any) {
-        // Log the error but still return basic user data
         console.error('Profile error during login:', profileError);
         return { 
           session: data.session, 
@@ -174,9 +187,6 @@ export const register = createAsyncThunk(
       
       console.log('Registration successful:', data);
       
-      // Don't try to create a profile yet - we'll do that on login
-      // This avoids potential race conditions with Supabase auth
-      
       return data;
     } catch (error: any) {
       console.error('Unexpected registration error:', error);
@@ -200,7 +210,6 @@ export const getCurrentUser = createAsyncThunk(
         const userProfile = await getOrCreateUserProfile(data.user);
         return userProfile;
       } catch (profileError: any) {
-        // Return basic user data on profile error
         console.error('Profile error in getCurrentUser:', profileError);
         return {
           id: 0,
@@ -213,6 +222,95 @@ export const getCurrentUser = createAsyncThunk(
     } catch (error: any) {
       localStorage.removeItem('token');
       return rejectWithValue(error.message || 'Failed to get user');
+    }
+  }
+);
+
+export const updateUserProfile = createAsyncThunk(
+  'auth/updateUserProfile',
+  async (profileData: Partial<User>, { getState, rejectWithValue }) => {
+    try {
+      const state: any = getState();
+      const { user } = state.auth;
+      
+      if (!user || !user.id) {
+        return rejectWithValue('User not authenticated');
+      }
+      
+      const { error: authUpdateError } = await supabase.auth.updateUser({
+        data: {
+          firstName: profileData.firstName,
+          lastName: profileData.lastName
+        }
+      });
+      
+      if (authUpdateError) {
+        console.error('Error updating auth metadata:', authUpdateError);
+      }
+      
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .update({
+          first_name: profileData.firstName,
+          last_name: profileData.lastName,
+          phone: profileData.phone,
+          job_title: profileData.jobTitle
+        })
+        .eq('id', user.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error updating user profile:', error);
+        return rejectWithValue(error.message);
+      }
+      
+      return {
+        ...user,
+        firstName: profileData.firstName || user.firstName,
+        lastName: profileData.lastName || user.lastName,
+        phone: profileData.phone || user.phone,
+        jobTitle: profileData.jobTitle || user.jobTitle
+      };
+    } catch (error: any) {
+      console.error('Unexpected profile update error:', error);
+      return rejectWithValue(error.message || 'Profile update failed');
+    }
+  }
+);
+
+export const updateUserSettings = createAsyncThunk(
+  'auth/updateUserSettings',
+  async (settings: UserSettings, { getState, rejectWithValue }) => {
+    try {
+      const state: any = getState();
+      const { user } = state.auth;
+      
+      if (!user || !user.id) {
+        return rejectWithValue('User not authenticated');
+      }
+      
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .update({
+          settings: settings
+        })
+        .eq('id', user.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Error updating user settings:', error);
+        return rejectWithValue(error.message);
+      }
+      
+      return {
+        ...user,
+        settings
+      };
+    } catch (error: any) {
+      console.error('Unexpected settings update error:', error);
+      return rejectWithValue(error.message || 'Settings update failed');
     }
   }
 );
@@ -244,6 +342,9 @@ const authSlice = createSlice({
       state.isAuthenticated = true;
       state.loading = false;
       state.error = null;
+    },
+    setUser: (state, action) => {
+      state.user = action.payload;
     }
   },
   extraReducers: (builder) => {
@@ -269,8 +370,6 @@ const authSlice = createSlice({
       })
       .addCase(register.fulfilled, (state) => {
         state.loading = false;
-        // We don't set the user here because they need to log in after registration
-        // This also handles Supabase email confirmation flow
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
@@ -292,9 +391,35 @@ const authSlice = createSlice({
         state.isAuthenticated = false;
         state.user = null;
         state.token = null;
+      })
+      
+      .addCase(updateUserProfile.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateUserProfile.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload;
+      })
+      .addCase(updateUserProfile.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+      })
+      
+      .addCase(updateUserSettings.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateUserSettings.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = action.payload;
+      })
+      .addCase(updateUserSettings.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
       });
   }
 });
 
-export const { logout, clearError, setMockAuthState } = authSlice.actions;
+export const { logout, clearError, setMockAuthState, setUser } = authSlice.actions;
 export default authSlice.reducer;

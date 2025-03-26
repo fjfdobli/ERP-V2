@@ -21,6 +21,8 @@ import SuppliersList from './pages/Supplier/SuppliersList';
 import Payroll from './pages/Payroll/Payroll';
 import MachineryList from './pages/Machinery/MachineryList';
 import ReportsList from './pages/Reports/ReportsList';
+import ProfilePage from './pages/ProfilePage';
+import SettingsPage from './pages/SettingsPage';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/common/LoadingScreen';
 
@@ -90,6 +92,8 @@ const AppContent: React.FC = () => {
           <Route path="suppliers" element={<SuppliersList />} />
           <Route path="machinery" element={<MachineryList />} />
           <Route path="reports" element={<ReportsList />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="settings" element={<SettingsPage />} />
         </Route>
         
         <Route path="*" element={<NotFound />} />
