@@ -93,7 +93,6 @@ const DashboardHome: React.FC = () => {
   const pendingOrders = (orders || []).filter(order => order.status === 'Pending').length || 0;
   const inProgressOrders = (orders || []).filter(order => order.status === 'In Progress').length || 0;
   const completedOrders = (orders || []).filter(order => order.status === 'Completed').length || 0;
-  
   const totalRevenue = (orders || []).reduce((sum, order) => sum + (order.totalAmount || 0), 0) || 0;
   const outstandingRevenue = (orders || []).reduce((sum, order) => sum + ((order.totalAmount || 0) - (order.amountPaid || 0)), 0) || 0;
 
@@ -344,7 +343,7 @@ const DashboardHome: React.FC = () => {
                                 {order.client?.name || 'Unknown Client'} • 
                               </Typography>
                               <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-                                ${order.totalAmount?.toLocaleString()}
+                                ₱{order.totalAmount?.toLocaleString()}
                               </Typography>
                               <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
                                 • {formatDate(order.createdAt)}
