@@ -10,8 +10,7 @@ const drawerWidth = 260;
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'Clients', icon: <ClientsIcon />, path: '/clients' },
-  { 
-    text: 'Orders', 
+  { text: 'Orders', 
     icon: <OrdersIcon />, 
     children: [
       { text: 'Order Requests', icon: <RequestIcon />, path: '/orders/requests' },
