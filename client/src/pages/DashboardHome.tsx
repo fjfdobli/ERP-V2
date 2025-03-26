@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppDispatch, useAppSelector } from '../../redux/hooks';
-import { fetchOrders } from '../../redux/slices/ordersSlice';
-import { fetchClients } from '../../redux/slices/clientsSlice';
-import { fetchInventory, fetchLowStockItems } from '../../redux/slices/inventorySlice';
+import { useAppDispatch, useAppSelector } from '../redux/hooks';
+import { fetchOrders } from '../redux/slices/ordersSlice';
+import { fetchClients } from '../redux/slices/clientsSlice';
+import { fetchInventory, fetchLowStockItems } from '../redux/slices/inventorySlice';
 import { Box, Grid, Paper, Typography, Divider, List, ListItem, ListItemText, Card, CardContent, CardHeader, Avatar, IconButton, Button, Chip, useTheme, LinearProgress } from '@mui/material';
 import { Assignment as OrdersIcon, People as ClientsIcon, Inventory as InventoryIcon, Warning as WarningIcon, TrendingUp as TrendingUpIcon, MoreVert as MoreVertIcon, ChevronRight as ChevronRightIcon, Circle as CircleIcon } from '@mui/icons-material';
 
@@ -65,7 +65,6 @@ const DashboardHome: React.FC = () => {
   const { inventoryItems, lowStockItems, isLoading: inventoryLoading, error: inventoryError } = useAppSelector(state => state.inventory);
 
   useEffect(() => {
-    // Wrap in try/catch to prevent component crashes
     try {
       dispatch(fetchOrders());
     } catch (error) {
@@ -91,7 +90,6 @@ const DashboardHome: React.FC = () => {
     }
   }, [dispatch]);
 
-  // Safely access data with fallbacks
   const pendingOrders = (orders || []).filter(order => order.status === 'Pending').length || 0;
   const inProgressOrders = (orders || []).filter(order => order.status === 'In Progress').length || 0;
   const completedOrders = (orders || []).filter(order => order.status === 'Completed').length || 0;
@@ -286,7 +284,6 @@ const DashboardHome: React.FC = () => {
       </Grid>
 
       <Grid container spacing={3}>
-        {/* Recent Orders */}
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%', boxShadow: 'none', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
             <CardHeader

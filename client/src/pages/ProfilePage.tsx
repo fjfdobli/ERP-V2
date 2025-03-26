@@ -1,19 +1,7 @@
 import React, { useState } from 'react';
 import { useAppSelector, useAppDispatch } from '../redux/hooks';
 import { updateUserProfile } from '../redux/slices/authSlice';
-import { 
-  Box, 
-  Card, 
-  CardContent, 
-  Typography, 
-  TextField, 
-  Button, 
-  Avatar, 
-  Grid, 
-  Divider,
-  Alert,
-  Snackbar
-} from '@mui/material';
+import { Box, Card, CardContent, Typography, TextField, Button, Avatar, Grid, Divider, Alert, Snackbar } from '@mui/material';
 import { Save as SaveIcon, AccountCircle } from '@mui/icons-material';
 
 const ProfilePage: React.FC = () => {

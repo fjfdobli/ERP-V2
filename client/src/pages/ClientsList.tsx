@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Avatar, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, FormControl, InputLabel, Select, MenuItem, Snackbar, Alert, SelectChangeEvent, Divider, FormControlLabel, Checkbox, Tab, Tabs } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon, Business, Person, Payments, Info, Refresh as RefreshIcon } from '@mui/icons-material';
-import { clientsService, Client, InsertClient } from '../../services/clientsService';
+import { clientsService, Client, InsertClient } from '../services/clientsService';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { supabase } from '../../supabaseClient';
+import { supabase } from '../supabaseClient';
 
 interface TabPanelProps {
   children?: React.ReactNode;
