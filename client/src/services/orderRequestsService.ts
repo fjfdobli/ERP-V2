@@ -14,7 +14,6 @@ export interface OrderRequest {
 export type InsertOrderRequest = Omit<OrderRequest, 'id' | 'created_at' | 'clients'>;
 export type UpdateOrderRequest = Partial<InsertOrderRequest>;
 
-// Mock data for development
 const mockOrderRequests: OrderRequest[] = [
   {
     id: 1,
@@ -30,7 +29,7 @@ const mockOrderRequests: OrderRequest[] = [
     id: 2,
     request_id: 'REQ-2025-00002',
     client_id: 2,
-    date: new Date(Date.now() - 86400000).toISOString().split('T')[0], // 1 day ago
+    date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
     type: 'Brochures',
     status: 'Approved',
     created_at: new Date(Date.now() - 86400000).toISOString(),
@@ -153,7 +152,6 @@ export const orderRequestsService = {
       
       if (error) {
         console.error('Error generating request ID:', error);
-        // Generate mock request ID
         return `${prefix}${(Math.floor(Math.random() * 10000) + 1).toString().padStart(5, '0')}`;
       }
       
@@ -167,7 +165,6 @@ export const orderRequestsService = {
       return `${prefix}${nextNumber.toString().padStart(5, '0')}`;
     } catch (error) {
       console.error('Unexpected error in generateRequestId:', error);
-      // Generate mock request ID
       const year = new Date().getFullYear();
       const prefix = `REQ-${year}-`;
       return `${prefix}${(Math.floor(Math.random() * 10000) + 1).toString().padStart(5, '0')}`;

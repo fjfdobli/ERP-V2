@@ -1,6 +1,5 @@
 import { supabase } from '../supabaseClient';
 
-// Updated interface with number type for id
 export interface Client {
   id: number;
   name: string;
@@ -28,7 +27,6 @@ export interface Client {
 export type InsertClient = Omit<Client, 'id' | 'createdAt' | 'updatedAt'>;
 export type UpdateClient = Partial<InsertClient>;
 
-// Mock data for development
 const mockClients: Client[] = [
   {
     id: 1,
@@ -59,7 +57,6 @@ export const clientsService = {
     try {
       console.log('Fetching clients...');
       
-      // Try to fetch data from Supabase
       try {
         const { data, error } = await supabase
           .from('clients')
@@ -68,17 +65,16 @@ export const clientsService = {
     
         if (error) {
           console.error('Error fetching clients:', error);
-          return mockClients; // Return mock data on error
+          return mockClients; 
         }
     
         console.log('Raw client data from database:', data);
         
         if (!data || data.length === 0) {
           console.log('No clients found in the database');
-          return mockClients; // Return mock data when empty
+          return mockClients; 
         }
     
-        // Create normalized data with fallbacks for all fields
         const normalizedData = data.map(client => {
           console.log('Processing client:', client);
           return {
@@ -110,11 +106,11 @@ export const clientsService = {
         return normalizedData;
       } catch (fetchError) {
         console.error('Error accessing Supabase:', fetchError);
-        return mockClients; // Return mock data on error
+        return mockClients;
       }
     } catch (error) {
       console.error('Unexpected error in getClients:', error);
-      return mockClients; // Return mock data on error
+      return mockClients;
     }
   },
 
@@ -128,20 +124,18 @@ export const clientsService = {
 
       if (error) {
         console.error(`Error fetching client with id ${id}:`, error);
-        // Return a mock client that matches the requested ID
         const mockClient = mockClients.find(c => c.id === id);
         if (mockClient) return mockClient;
-        return mockClients[0]; // Fallback to first mock client
+        return mockClients[0]; 
       }
 
       if (!data) {
         console.warn(`Client with id ${id} not found`);
         const mockClient = mockClients.find(c => c.id === id);
         if (mockClient) return mockClient;
-        return mockClients[0]; // Fallback to first mock client
+        return mockClients[0]; 
       }
 
-      // Handle both camelCase and snake_case field names
       return {
         id: data.id,
         name: data.name,
@@ -167,19 +161,16 @@ export const clientsService = {
       };
     } catch (error) {
       console.error('Unexpected error in getClientById:', error);
-      // Return a mock client that matches the requested ID
       const mockClient = mockClients.find(c => c.id === id);
       if (mockClient) return mockClient;
-      return mockClients[0]; // Fallback to first mock client
+      return mockClients[0];
     }
   },
 
   async createClient(client: InsertClient): Promise<Client> {
     try {
-      // Log the data being sent to ensure proper format
       console.log('Creating client with data:', client);
       
-      // Map camelCase field names to match database columns
       const clientData = {
         name: client.name,
         contactPerson: client.contactPerson,
@@ -216,7 +207,6 @@ export const clientsService = {
         throw new Error('Failed to create client - no data returned');
       }
 
-      // Handle both camelCase and snake_case field names in the response
       return {
         id: data.id,
         name: data.name,
@@ -248,13 +238,9 @@ export const clientsService = {
 
   async updateClient(id: number, client: UpdateClient): Promise<Client> {
     try {
-      // Log the data being sent
       console.log(`Updating client ${id} with data:`, client);
-      
-      // Ensure id is a number
       const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
       
-      // First, check if the client exists
       try {
         const { data: existingClient, error: checkError } = await supabase
           .from('clients')
@@ -267,7 +253,6 @@ export const clientsService = {
           throw new Error(`Client with id ${numericId} not found`);
         }
         
-        // Now update the client
         const { data, error } = await supabase
           .from('clients')
           .update(client)
@@ -283,10 +268,7 @@ export const clientsService = {
           throw new Error(`Update failed for client with id ${numericId}`);
         }
   
-        // Return the first (and should be only) item in the array
         const updatedClient = data[0];
-        
-        // Handle both camelCase and snake_case field names in the response
         return {
           id: updatedClient.id,
           name: updatedClient.name,
@@ -311,10 +293,8 @@ export const clientsService = {
           updatedAt: updatedClient.updatedAt || updatedClient.updated_at
         };
       } catch (error) {
-        // Return a mock client that matches the requested ID
         const mockClient = mockClients.find(c => c.id === id);
         if (mockClient) {
-          // Update with new values
           const updatedMock = { ...mockClient, ...client };
           return updatedMock;
         }
@@ -331,7 +311,6 @@ export const clientsService = {
       const searchTerm = `%${query}%`;
       
       try {
-        // Search across multiple columns using ilike for case-insensitive search
         const { data, error } = await supabase
           .from('clients')
           .select('*')
@@ -340,7 +319,6 @@ export const clientsService = {
   
         if (error) {
           console.error('Error searching clients:', error);
-          // Filter mock data
           return mockClients.filter(client => 
             client.name.toLowerCase().includes(query.toLowerCase()) ||
             client.contactPerson.toLowerCase().includes(query.toLowerCase()) ||
@@ -349,7 +327,6 @@ export const clientsService = {
           );
         }
   
-        // Handle both camelCase and snake_case field names
         const normalizedData = (data || []).map(client => ({
           id: client.id,
           name: client.name,
@@ -377,7 +354,6 @@ export const clientsService = {
         return normalizedData;
       } catch (error) {
         console.error('Error searching in Supabase:', error);
-        // Filter mock data
         return mockClients.filter(client => 
           client.name.toLowerCase().includes(query.toLowerCase()) ||
           client.contactPerson.toLowerCase().includes(query.toLowerCase()) ||
@@ -387,7 +363,7 @@ export const clientsService = {
       }
     } catch (error) {
       console.error('Unexpected error in searchClients:', error);
-      return mockClients; // Return all mock data on error
+      return mockClients; 
     }
   }
 };

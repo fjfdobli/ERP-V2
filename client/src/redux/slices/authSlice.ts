@@ -248,7 +248,7 @@ export const updateUserProfile = createAsyncThunk(
         console.error('Error updating auth metadata:', authUpdateError);
       }
       
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('user_profiles')
         .update({
           first_name: profileData.firstName,
@@ -290,7 +290,7 @@ export const updateUserSettings = createAsyncThunk(
         return rejectWithValue('User not authenticated');
       }
       
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('user_profiles')
         .update({
           settings: settings

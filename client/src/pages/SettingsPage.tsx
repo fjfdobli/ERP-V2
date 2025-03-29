@@ -1,35 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../redux/hooks';
 import { updateUserSettings } from '../redux/slices/authSlice';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Switch,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Button,
-  FormControlLabel,
-  Alert,
-  Snackbar,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  SelectChangeEvent
-} from '@mui/material';
-import {
-  Save as SaveIcon,
-  Notifications as NotificationsIcon,
-  Visibility as VisibilityIcon,
-  Language as LanguageIcon,
-  ColorLens as ThemeIcon,
-  Security as SecurityIcon
-} from '@mui/icons-material';
+import { Box, Card, CardContent, Typography, Switch, Divider, List, ListItem, ListItemText, ListItemIcon, Button, FormControlLabel, Alert, Snackbar, Select, MenuItem, FormControl, SelectChangeEvent } from '@mui/material';
+import { Save as SaveIcon, Notifications as NotificationsIcon, Visibility as VisibilityIcon, Language as LanguageIcon, ColorLens as ThemeIcon, Security as SecurityIcon } from '@mui/icons-material';
 
 interface UserSettings {
   emailNotifications: boolean;

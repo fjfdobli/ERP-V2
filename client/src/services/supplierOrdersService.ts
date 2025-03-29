@@ -14,7 +14,6 @@ export interface SupplierOrder {
 export type InsertSupplierOrder = Omit<SupplierOrder, 'id' | 'created_at' | 'suppliers'>;
 export type UpdateSupplierOrder = Partial<InsertSupplierOrder>;
 
-// Mock data for development
 const mockSupplierOrders: SupplierOrder[] = [
   {
     id: 1,
@@ -139,7 +138,6 @@ export const supplierOrdersService = {
     }
   },
   
-  // Generate a new PO number
   async generatePoNumber() {
     try {
       const year = new Date().getFullYear();
@@ -154,7 +152,6 @@ export const supplierOrdersService = {
       
       if (error) {
         console.error('Error generating PO number:', error);
-        // Generate mock PO number
         return `${prefix}${(Math.floor(Math.random() * 10000) + 1).toString().padStart(5, '0')}`;
       }
       
@@ -168,7 +165,6 @@ export const supplierOrdersService = {
       return `${prefix}${nextNumber.toString().padStart(5, '0')}`;
     } catch (error) {
       console.error('Unexpected error in generatePoNumber:', error);
-      // Generate mock PO number
       const year = new Date().getFullYear();
       const prefix = `PO-${year}-`;
       return `${prefix}${(Math.floor(Math.random() * 10000) + 1).toString().padStart(5, '0')}`;

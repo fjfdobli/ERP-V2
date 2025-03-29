@@ -48,7 +48,6 @@ const initialState: OrdersState = {
   error: null
 };
 
-// Mock data mapping function
 const mapClientOrderToOrder = (clientOrder: any): Order => {
   return {
     id: clientOrder.id?.toString() || '',
@@ -58,7 +57,7 @@ const mapClientOrderToOrder = (clientOrder: any): Order => {
     title: `Order ₱{clientOrder.order_id}`,
     status: clientOrder.status || 'Pending',
     totalAmount: clientOrder.amount || 0,
-    amountPaid: 0, // Default
+    amountPaid: 0,
     createdAt: clientOrder.created_at
   };
 };
@@ -68,11 +67,9 @@ export const fetchOrders = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       try {
-        // First try the API
         const response = await apiClient.get('/orders');
         return response.data.data;
       } catch (apiError) {
-        // On API failure, use the client orders service with mock data
         console.log('API fetch failed, using client orders service');
         const clientOrders = await clientOrdersService.getClientOrders();
         return clientOrders.map(mapClientOrderToOrder);
@@ -91,7 +88,6 @@ export const fetchOrderById = createAsyncThunk(
         const response = await apiClient.get(`/orders/${id}`);
         return response.data.data;
       } catch (apiError) {
-        // On API failure, use the client orders service with mock data
         const clientOrder = await clientOrdersService.getClientOrderById(parseInt(id));
         return mapClientOrderToOrder(clientOrder);
       }

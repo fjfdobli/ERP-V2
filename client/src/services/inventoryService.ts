@@ -13,7 +13,6 @@ export interface InventoryItem {
 export type InsertInventoryItem = Omit<InventoryItem, 'id' | 'created_at'>;
 export type UpdateInventoryItem = Partial<InsertInventoryItem>;
 
-// Mock data for development
 const mockInventoryItems: InventoryItem[] = [
   {
     id: 1,
@@ -134,7 +133,6 @@ export const inventoryService = {
       
       if (error) {
         console.error('Error fetching low stock items:', error);
-        // Filter mock items to those with quantity below min_stock
         return mockInventoryItems.filter(item => item.quantity < item.min_stock);
       }
       
@@ -147,7 +145,6 @@ export const inventoryService = {
   
   async restockItem(id: number, quantity: number) {
     try {
-      // First get the current quantity
       const { data: item, error: getError } = await supabase
         .from('inventory')
         .select('quantity')
@@ -189,7 +186,6 @@ export const inventoryService = {
       
       if (error) {
         console.error('Error searching inventory:', error);
-        // Filter mock items
         return mockInventoryItems.filter(item => 
           item.item_name.toLowerCase().includes(query.toLowerCase()) ||
           item.sku.toLowerCase().includes(query.toLowerCase()) ||

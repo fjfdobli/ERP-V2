@@ -14,7 +14,6 @@ export interface ClientOrder {
 export type InsertClientOrder = Omit<ClientOrder, 'id' | 'created_at' | 'clients'>;
 export type UpdateClientOrder = Partial<InsertClientOrder>;
 
-// Mock data for development
 const mockClientOrders: ClientOrder[] = [
   {
     id: 1,
@@ -33,7 +32,7 @@ const mockClientOrders: ClientOrder[] = [
     date: new Date().toISOString().split('T')[0],
     amount: 2200,
     status: 'In Progress',
-    created_at: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+    created_at: new Date(Date.now() - 86400000).toISOString(),
     clients: { name: 'Globex Industries', contactPerson: 'Jane Smith' }
   }
 ];
@@ -153,7 +152,6 @@ export const clientOrdersService = {
       
       if (error) {
         console.error('Error generating order ID:', error);
-        // Generate mock order ID
         return `${prefix}${(Math.floor(Math.random() * 10000) + 1).toString().padStart(5, '0')}`;
       }
       
@@ -167,7 +165,6 @@ export const clientOrdersService = {
       return `${prefix}${nextNumber.toString().padStart(5, '0')}`;
     } catch (error) {
       console.error('Unexpected error in generateOrderId:', error);
-      // Generate mock order ID
       const year = new Date().getFullYear();
       const prefix = `ORD-${year}-`;
       return `${prefix}${(Math.floor(Math.random() * 10000) + 1).toString().padStart(5, '0')}`;

@@ -562,19 +562,6 @@ const ClientsList: React.FC = () => {
           }}
         />
         <Button 
-          variant="outlined" 
-          sx={{ mr: 1 }}
-          onClick={handleSearch}
-        >
-          Filter
-        </Button>
-        <Button 
-          variant="outlined"
-          sx={{ mr: 1 }}
-        >
-          Export
-        </Button>
-        <Button 
           variant="outlined"
           color="secondary"
           startIcon={<RefreshIcon />}
