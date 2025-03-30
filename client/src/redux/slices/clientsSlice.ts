@@ -28,7 +28,6 @@ const initialState: ClientsState = {
   error: null
 };
 
-// Map service client to the format expected by the application
 const mapServiceClientToClient = (client: any): Client => {
   return {
     id: client.id?.toString() || '',
@@ -38,8 +37,8 @@ const mapServiceClientToClient = (client: any): Client => {
     phone: client.phone || '',
     address: client.address || '',
     notes: client.notes || '',
-    createdAt: client.createdAt || client.created_at,
-    updatedAt: client.updatedAt || client.updated_at
+    createdAt: client.createdAt,
+    updatedAt: client.updatedAt
   };
 };
 
@@ -48,11 +47,9 @@ export const fetchClients = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       try {
-        // First try the API
         const response = await apiClient.get('/clients');
         return response.data.data;
       } catch (apiError) {
-        // On API failure, use the clients service with mock data
         console.log('API fetch failed, using clients service');
         const clients = await clientsService.getClients();
         return clients.map(mapServiceClientToClient);
@@ -71,7 +68,6 @@ export const fetchClientById = createAsyncThunk(
         const response = await apiClient.get(`/clients/${id}`);
         return response.data.data;
       } catch (apiError) {
-        // On API failure, use the clients service with mock data
         const client = await clientsService.getClientById(parseInt(id));
         return mapServiceClientToClient(client);
       }
@@ -105,18 +101,6 @@ export const updateClient = createAsyncThunk(
   }
 );
 
-export const deleteClient = createAsyncThunk(
-  'clients/deleteClient',
-  async (id: string, { rejectWithValue }) => {
-    try {
-      await apiClient.delete(`/clients/${id}`);
-      return id;
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to delete client');
-    }
-  }
-);
-
 const clientsSlice = createSlice({
   name: 'clients',
   initialState,
@@ -141,7 +125,7 @@ const clientsSlice = createSlice({
       .addCase(fetchClients.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
-        state.clients = []; // Empty data on error
+        state.clients = [];
       })
       
       .addCase(fetchClientById.pending, (state) => {
@@ -186,22 +170,6 @@ const clientsSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      
-      .addCase(deleteClient.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(deleteClient.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.clients = state.clients.filter(client => client.id !== action.payload);
-        if (state.currentClient && state.currentClient.id === action.payload) {
-          state.currentClient = null;
-        }
-      })
-      .addCase(deleteClient.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
-      });
   }
 });
 

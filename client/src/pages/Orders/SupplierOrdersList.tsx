@@ -28,8 +28,6 @@ const SupplierOrdersList: React.FC = () => {
             ),
           }}
         />
-        <Button variant="outlined" sx={{ mr: 1 }}>Filter</Button>
-        <Button variant="outlined">Export</Button>
       </Box>
 
       <TableContainer component={Paper} sx={{ boxShadow: 'none', border: '1px solid rgba(0, 0, 0, 0.08)' }}>

@@ -13,14 +13,14 @@ const menuItems = [
   { text: 'Orders', 
     icon: <OrdersIcon />, 
     children: [
-      { text: 'Order Requests', icon: <RequestIcon />, path: '/orders/requests' },
       { text: 'Client Orders', icon: <ClientRequestIcon />, path: '/orders/clients' },
+      { text: 'Order Requests', icon: <RequestIcon />, path: '/orders/requests' },
       { text: 'Supplier Orders', icon: <SupplierRequestIcon />, path: '/orders/suppliers' }
     ]
   },
+  { text: 'Suppliers', icon: <SuppliersIcon />, path: '/suppliers' },
   { text: 'Inventory', icon: <InventoryIcon />, path: '/inventory' },
   { text: 'Employees', icon: <EmployeesIcon />, path: '/employees' },
-  { text: 'Suppliers', icon: <SuppliersIcon />, path: '/suppliers' },
   { text: 'Payroll', icon: <PayrollIcon />, path: '/payroll' },
   { text: 'Machinery', icon: <MachineryIcon />, path: '/machinery' },
   { text: 'Reports', icon: <ReportsIcon />, path: '/reports' },
@@ -39,15 +39,15 @@ const DashboardLayout: React.FC = () => {
   
   const isSmallScreen = useMediaQuery((theme) => theme.breakpoints.down('md'));
 
-  const isOrdersPathActive = () => {
+  const isOrdersPathActive = React.useCallback(() => {
     return location.pathname.includes('/orders');
-  };
+  }, [location.pathname]);
 
   useEffect(() => {
     if (isOrdersPathActive() && openSubMenu !== 'Orders') {
       setOpenSubMenu('Orders');
     }
-  }, [location.pathname, openSubMenu]);
+  }, [isOrdersPathActive, openSubMenu]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);

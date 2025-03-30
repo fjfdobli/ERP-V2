@@ -5,7 +5,6 @@ import { clientsService, Client, InsertClient } from '../services/clientsService
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { supabase } from '../supabaseClient';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -33,74 +32,6 @@ function TabPanel(props: TabPanelProps) {
   );
 }
 
-const testSupabaseConnection = async () => {
-  try {
-    const { data, error } = await supabase.from('clients').select('count');
-    
-    if (error) {
-      console.error('Supabase connection error:', error);
-      return { success: false, error: error.message };
-    }
-    
-    return { 
-      success: true, 
-      message: 'Connected to Supabase successfully',
-      data 
-    };
-  } catch (err) {
-    const error = err as Error;
-    console.error('Unexpected error:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-const validateClientsTable = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .limit(1);
-    
-    if (error) {
-      console.error('Error validating clients table:', error);
-      return { 
-        success: false, 
-        error: error.message,
-        suggestion: 'Make sure the clients table exists and has the correct permissions'
-      };
-    }
-    
-    if (data && data.length > 0) {
-      console.log('Table structure sample:', Object.keys(data[0]));
-      const requiredFields = ['id', 'name', 'contactPerson', 'email', 'phone', 'status'];
-      const missingFields = requiredFields.filter(field => !Object.keys(data[0]).includes(field));
-      
-      if (missingFields.length > 0) {
-        return {
-          success: false,
-          message: 'Table exists but is missing required fields',
-          missingFields
-        };
-      }
-      
-      return {
-        success: true,
-        message: 'Clients table exists and has the correct structure',
-        sampleData: data[0]
-      };
-    }
-    
-    return {
-      success: true,
-      message: 'Clients table exists but contains no data'
-    };
-  } catch (err) {
-    const error = err as Error;
-    console.error('Unexpected error:', error);
-    return { success: false, error: error.message };
-  }
-};
-
 interface ClientFormData {
   name: string;
   contactPerson: string;
@@ -123,19 +54,204 @@ interface ClientFormData {
   billing_state: string;
   billing_postal_code: string;
   paymentTerms: string;
-  creditLimit: number;
+  creditLimit: number | string;
   taxExempt: boolean;
   specialRequirements: string;
   acquisition_date: Date | null;
   notes: string;
-  createdAt?: string;
 }
 
+interface ClientViewDetailsProps {
+  open: boolean;
+  client: Client | null;
+  onClose: () => void;
+}
+
+// Business Info Tab Component
+const BusinessInfoTab = ({ client }: { client: Client }) => {
+  return (
+    <Grid container spacing={3}>
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Business/Organization Name</Typography>
+        <Typography variant="body1">{client.name}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Business Type</Typography>
+        <Typography variant="body1">{client.businessType || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">TIN</Typography>
+        <Typography variant="body1">{client.taxId || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Industry</Typography>
+        <Typography variant="body1">{client.industry || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Client Since</Typography>
+        <Typography variant="body1">{client.clientSince || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Status</Typography>
+        <Chip 
+          label={client.status || 'Active'} 
+          color={client.status === 'Inactive' ? 'default' : 'primary'}
+          size="small"
+        />
+      </Grid>
+    </Grid>
+  );
+};
+
+// Contact Details Tab Component
+const ContactDetailsTab = ({ client }: { client: Client }) => {
+  return (
+    <Grid container spacing={3}>
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Email</Typography>
+        <Typography variant="body1">{client.email || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Phone</Typography>
+        <Typography variant="body1">{client.phone || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Alternate Phone</Typography>
+        <Typography variant="body1">{client.alternatePhone || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12}>
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle1" fontWeight="bold">Address</Typography>
+        <Typography variant="body1">{client.address || 'Not specified'}</Typography>
+      </Grid>
+    </Grid>
+  );
+};
+
+// Billing & Payment Tab Component
+const BillingPaymentTab = ({ client }: { client: Client }) => {
+  return (
+    <Grid container spacing={3}>
+      <Grid item xs={12}>
+        <Typography variant="subtitle1" fontWeight="bold">Billing Address</Typography>
+        {client.billingAddressSame ? (
+          <Typography variant="body1">Same as business address</Typography>
+        ) : (
+          <Typography variant="body1">{client.billingAddress || 'Not specified'}</Typography>
+        )}
+      </Grid>
+      
+      <Grid item xs={12}>
+        <Divider sx={{ my: 2 }} />
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Payment Terms</Typography>
+        <Typography variant="body1">{client.paymentTerms || 'Not specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12} md={6}>
+        <Typography variant="subtitle1" fontWeight="bold">Credit Limit</Typography>
+        <Typography variant="body1">₱{typeof client.creditLimit === 'number' ? client.creditLimit.toLocaleString() : client.creditLimit || '0'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12}>
+        <Typography variant="subtitle1" fontWeight="bold">Tax Status</Typography>
+        <Typography variant="body1">{client.taxExempt ? 'Tax Exempt' : 'Taxable'}</Typography>
+      </Grid>
+    </Grid>
+  );
+};
+
+// Additional Info Tab Component
+const AdditionalInfoTab = ({ client }: { client: Client }) => {
+  return (
+    <Grid container spacing={3}>
+      <Grid item xs={12}>
+        <Typography variant="subtitle1" fontWeight="bold">Special Requirements or Preferences</Typography>
+        <Typography variant="body1">{client.specialRequirements || 'None specified'}</Typography>
+      </Grid>
+      
+      <Grid item xs={12}>
+        <Divider sx={{ my: 2 }} />
+        <Typography variant="subtitle1" fontWeight="bold">Notes</Typography>
+        <Typography variant="body1">{client.notes || 'No notes'}</Typography>
+      </Grid>
+    </Grid>
+  );
+};
+
+// Client View Details Dialog Component
+const ClientViewDetails: React.FC<ClientViewDetailsProps> = ({ open, client, onClose }) => {
+  const [tabValue, setTabValue] = useState(0);
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
+  if (!client) return null;
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+      <DialogTitle>
+        Client Details: {client.name}
+        {client.status === 'Inactive' && (
+          <Chip 
+            label="Inactive" 
+            color="default"
+            size="small" 
+            sx={{ ml: 1 }}
+          />
+        )}
+      </DialogTitle>
+      <Divider />
+      
+      <Tabs value={tabValue} onChange={handleTabChange} aria-label="client details tabs" centered>
+        <Tab icon={<Business />} label="Business Info" />
+        <Tab icon={<Person />} label="Contact Details" />
+        <Tab icon={<Payments />} label="Billing & Payment" />
+        <Tab icon={<Info />} label="Additional Info" />
+      </Tabs>
+      
+      <DialogContent>
+        <TabPanel value={tabValue} index={0}>
+          <BusinessInfoTab client={client} />
+        </TabPanel>
+        
+        <TabPanel value={tabValue} index={1}>
+          <ContactDetailsTab client={client} />
+        </TabPanel>
+        
+        <TabPanel value={tabValue} index={2}>
+          <BillingPaymentTab client={client} />
+        </TabPanel>
+        
+        <TabPanel value={tabValue} index={3}>
+          <AdditionalInfoTab client={client} />
+        </TabPanel>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+// Main Component
 const ClientsList: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [openDialog, setOpenDialog] = useState<boolean>(false);
+  const [openViewDialog, setOpenViewDialog] = useState<boolean>(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [tabValue, setTabValue] = useState(0);
   const [formData, setFormData] = useState<ClientFormData>({
@@ -143,7 +259,7 @@ const ClientsList: React.FC = () => {
     contactPerson: '',
     email: '',
     phone: '',
-    status: 'Regular',
+    status: 'Active',
     businessType: 'Company',
     taxId: '',
     industry: '',
@@ -201,55 +317,6 @@ const ClientsList: React.FC = () => {
     setSnackbar({ open: true, message, severity });
   }, []);
 
-  const troubleshootDataIssue = useCallback(async () => {
-    try {
-      setLoading(true);
-      console.log('Troubleshooting data issue...');
-      
-      // Check direct database connection
-      const { data: directData, error: directError } = await supabase
-        .from('clients')
-        .select('*');
-        
-      if (directError) {
-        console.error('Direct database query error:', directError);
-        showSnackbar('Database connection error', 'error');
-        return;
-      }
-      
-      console.log('Direct database query results:', directData);
-      
-      if (!directData || directData.length === 0) {
-        console.log('No data found in direct database query');
-        showSnackbar('No clients found in the database', 'error');
-      } else {
-        console.log(`Found ${directData.length} records directly in database`);
-        
-        // Check if service layer is failing
-        try {
-          const serviceData = await clientsService.getClients();
-          console.log('Service layer returned:', serviceData);
-          
-          if (!serviceData || serviceData.length === 0) {
-            console.log('Service layer returned empty results despite data in database');
-            showSnackbar('Service layer issue - check console logs', 'error');
-          } else {
-            setClients(serviceData);
-            showSnackbar(`Successfully loaded ${serviceData.length} clients`, 'success');
-          }
-        } catch (serviceError) {
-          console.error('Service layer error:', serviceError);
-          showSnackbar('Error in service layer', 'error');
-        }
-      }
-    } catch (error) {
-      console.error('Troubleshooting failed:', error);
-      showSnackbar('Troubleshooting failed', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showSnackbar]);
-
   const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
@@ -263,29 +330,6 @@ const ClientsList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [showSnackbar]);
-
-  useEffect(() => {
-    const testConnection = async () => {
-      try {
-        const connectionTest = await testSupabaseConnection();
-        console.log('Connection test result:', connectionTest);
-        
-        const tableValidation = await validateClientsTable();
-        console.log('Table validation result:', tableValidation);
-        
-        if (!connectionTest.success) {
-          showSnackbar('Failed to connect to the database: ' + connectionTest.error, 'error');
-        } else if (!tableValidation.success) {
-          showSnackbar('Database table issue: ' + (tableValidation.error || tableValidation.message), 'error');
-        }
-      } catch (error) {
-        console.error('Test error:', error);
-        showSnackbar('Connection test failed', 'error');
-      }
-    };
-    
-    testConnection();
   }, [showSnackbar]);
 
   useEffect(() => {
@@ -310,33 +354,59 @@ const ClientsList: React.FC = () => {
     }
   };
 
+  const handleOpenViewDialog = (client: Client) => {
+    setSelectedClient(client);
+    setOpenViewDialog(true);
+  };
+
+  const handleCloseViewDialog = () => {
+    setOpenViewDialog(false);
+    setSelectedClient(null);
+  };
+
+  const parseAddress = (address?: string | null) => {
+    if (!address) return { line1: '', line2: '', city: '', state: '', postalCode: '' };
+    
+    const parts = address.split(', ');
+    return {
+      line1: parts[0] || '',
+      line2: parts.length > 4 ? parts[1] : '',
+      city: parts.length > 4 ? parts[2] : (parts.length > 1 ? parts[1] : ''),
+      state: parts.length > 4 ? parts[3] : (parts.length > 2 ? parts[2] : ''),
+      postalCode: parts.length > 4 ? parts[4] : (parts.length > 3 ? parts[3] : '')
+    };
+  };
+
   const handleOpenDialog = (client?: Client) => {
     if (client) {
+      const mainAddress = parseAddress(client.address);
+      const billingAddress = client.billingAddressSame ? 
+        mainAddress : parseAddress(client.billingAddress);
+      
       setSelectedClient(client);
       setFormData({
         name: client.name,
         contactPerson: client.contactPerson,
-        email: client.email,
-        phone: client.phone,
-        status: client.status || 'Regular',
-        createdAt: client.createdAt,
+        email: client.email || '',
+        phone: client.phone || '',
+        status: client.status === 'Inactive' ? 'Inactive' : 'Active',
         businessType: client.businessType || 'Company',
         taxId: client.taxId || '',
         industry: client.industry || '',
-        address_line1: '',
-        address_line2: '',
-        city: '',
-        state: '',
-        postal_code: '',
+        address_line1: mainAddress.line1,
+        address_line2: mainAddress.line2,
+        city: mainAddress.city,
+        state: mainAddress.state,
+        postal_code: mainAddress.postalCode,
         alternatePhone: client.alternatePhone || '',
         billingAddressSame: client.billingAddressSame !== false,
-        billing_address_line1: '',
-        billing_address_line2: '',
-        billing_city: '',
-        billing_state: '',
-        billing_postal_code: '',
+        billing_address_line1: billingAddress.line1,
+        billing_address_line2: billingAddress.line2,
+        billing_city: billingAddress.city,
+        billing_state: billingAddress.state,
+        billing_postal_code: billingAddress.postalCode,
         paymentTerms: client.paymentTerms || '30 Days Term',
-        creditLimit: client.creditLimit || 5000,
+        creditLimit: client.creditLimit !== null && client.creditLimit !== undefined ? client.creditLimit : 5000,
         taxExempt: client.taxExempt || false,
         specialRequirements: client.specialRequirements || '',
         acquisition_date: client.clientSince ? new Date(client.clientSince) : new Date(),
@@ -349,7 +419,7 @@ const ClientsList: React.FC = () => {
         contactPerson: '',
         email: '',
         phone: '',
-        status: 'Regular',
+        status: 'Active',
         businessType: 'Company',
         taxId: '',
         industry: '',
@@ -464,7 +534,7 @@ const ClientsList: React.FC = () => {
         contactPerson: formData.contactPerson,
         email: formData.email || '',
         phone: formData.phone || '',
-        status: formData.status,
+        status: formData.status, // This should be either 'Active' or 'Inactive'
         address: formattedAddress,
         notes: formData.notes || '',
         businessType: formData.businessType || 'Company',
@@ -563,9 +633,9 @@ const ClientsList: React.FC = () => {
         />
         <Button 
           variant="outlined"
-          color="secondary"
+          color="primary"
           startIcon={<RefreshIcon />}
-          onClick={troubleshootDataIssue}
+          onClick={fetchClients}
         >
           Refresh Data
         </Button>
@@ -580,10 +650,8 @@ const ClientsList: React.FC = () => {
           <Table>
             <TableHead sx={{ backgroundColor: 'background.paper' }}>
               <TableRow>
-                <TableCell><strong>Client</strong></TableCell>
+                <TableCell><strong>Client Name</strong></TableCell>
                 <TableCell><strong>Contact Person</strong></TableCell>
-                <TableCell><strong>Email</strong></TableCell>
-                <TableCell><strong>Phone</strong></TableCell>
                 <TableCell><strong>Status</strong></TableCell>
                 <TableCell><strong>Actions</strong></TableCell>
               </TableRow>
@@ -593,34 +661,57 @@ const ClientsList: React.FC = () => {
                 clients.map((client) => (
                   <TableRow key={client.id}>
                     <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Avatar sx={{ bgcolor: getAvatarColor(client.name), mr: 2 }}>
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center',
+                        opacity: client.status === 'Inactive' ? 0.7 : 1
+                      }}>
+                        <Avatar sx={{ 
+                          bgcolor: getAvatarColor(client.name), 
+                          mr: 2,
+                          opacity: client.status === 'Inactive' ? 0.7 : 1
+                        }}>
                           {getInitials(client.name)}
                         </Avatar>
-                        <Typography variant="body2" fontWeight="medium">
+                        <Typography 
+                          variant="body2" 
+                          fontWeight="medium"
+                          sx={{ 
+                            textDecoration: client.status === 'Inactive' ? 'line-through' : 'none',
+                          }}
+                        >
                           {client.name}
                         </Typography>
                       </Box>
                     </TableCell>
                     <TableCell>{client.contactPerson}</TableCell>
-                    <TableCell>{client.email}</TableCell>
-                    <TableCell>{client.phone}</TableCell>
                     <TableCell>
                       <Chip 
-                        label={client.status} 
-                        color={client.status === '' ? 'secondary' : (client.status === 'New' ? 'primary' : 'default')}
+                        label={client.status === 'Inactive' ? 'Inactive' : 'Active'} 
+                        color={client.status === 'Inactive' ? 'default' : 'primary'}
                         size="small"
                       />
                     </TableCell>
                     <TableCell>
-                      <Button size="small">View</Button>
-                      <Button size="small">Edit</Button>
+                      <Button 
+                        size="small" 
+                        onClick={() => handleOpenViewDialog(client)}
+                        sx={{ mr: 1 }}
+                      >
+                        View
+                      </Button>
+                      <Button 
+                        size="small"
+                        onClick={() => handleOpenDialog(client)}
+                      >
+                        Edit
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} align="center">
+                  <TableCell colSpan={4} align="center">
                     No clients found
                   </TableCell>
                 </TableRow>
@@ -630,11 +721,11 @@ const ClientsList: React.FC = () => {
         </TableContainer>
       )}
 
+      {/* Edit Client Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="lg" fullWidth>
         <DialogTitle>
           {selectedClient ? `Edit Client: ${selectedClient.name}` : 'Add New Client'}
         </DialogTitle>
-        <Divider />
         
         <Tabs value={tabValue} onChange={handleTabChange} aria-label="client form tabs" centered>
           <Tab icon={<Business />} label="Business Info" />
@@ -717,8 +808,7 @@ const ClientsList: React.FC = () => {
                     label="Client Status"
                     onChange={handleSelectChange}
                   >
-                    <MenuItem value="Regular">Regular</MenuItem>
-                    <MenuItem value="New">New</MenuItem>
+                    <MenuItem value="Active">Active</MenuItem>
                     <MenuItem value="Inactive">Inactive</MenuItem>
                   </Select>
                 </FormControl>
@@ -753,7 +843,7 @@ const ClientsList: React.FC = () => {
                   required
                   value={formData.contactPerson}
                   onChange={handleInputChange}
-                />
+                  />
               </Grid>
               
               <Grid item xs={12} md={6}>
@@ -797,24 +887,14 @@ const ClientsList: React.FC = () => {
               <Grid item xs={12}>
                 <TextField
                   name="address_line1"
-                  label="Address Line 1"
+                  label="Address"
                   fullWidth
                   value={formData.address_line1}
                   onChange={handleInputChange}
                 />
               </Grid>
               
-              <Grid item xs={12}>
-                <TextField
-                  name="address_line2"
-                  label="Address Line 2"
-                  fullWidth
-                  value={formData.address_line2}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={4}>
                 <TextField
                   name="city"
                   label="City"
@@ -824,7 +904,7 @@ const ClientsList: React.FC = () => {
                 />
               </Grid>
               
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={4}>
                 <TextField
                   name="state"
                   label="State/Province"
@@ -834,7 +914,7 @@ const ClientsList: React.FC = () => {
                 />
               </Grid>
               
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={4}>
                 <TextField
                   name="postal_code"
                   label="Postal Code"
@@ -890,7 +970,7 @@ const ClientsList: React.FC = () => {
                     />
                   </Grid>
                   
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} md={4}>
                     <TextField
                       name="billing_city"
                       label="City"
@@ -900,7 +980,7 @@ const ClientsList: React.FC = () => {
                     />
                   </Grid>
                   
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} md={4}>
                     <TextField
                       name="billing_state"
                       label="State/Province"
@@ -910,7 +990,7 @@ const ClientsList: React.FC = () => {
                     />
                   </Grid>
 
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} md={4}>
                    <TextField
                      name="billing_postal_code"
                      label="Postal Code"
@@ -1024,12 +1104,20 @@ const ClientsList: React.FC = () => {
          <Button 
            onClick={handleSubmit} 
            variant="contained" 
+           color="primary"
            disabled={loading}
          >
-           {loading ? <CircularProgress size={24} /> : 'Save Client'}
+           {loading ? <CircularProgress size={24} /> : (selectedClient ? 'Save Client' : 'Add Client')}
          </Button>
        </DialogActions>
      </Dialog>
+
+      {/* View Client Details Dialog */}
+      <ClientViewDetails 
+        open={openViewDialog}
+        client={selectedClient}
+        onClose={handleCloseViewDialog}
+      />
 
      <Snackbar
        open={snackbar.open}
