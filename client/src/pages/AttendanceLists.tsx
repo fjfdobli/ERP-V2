@@ -495,7 +495,7 @@ const AttendanceLists: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, alignItems: 'center' }}>
         <Typography variant="h4" component="h1" fontWeight="bold">
-          Attendance Management
+          Attendance
         </Typography>
         <Box>
           <Button 
