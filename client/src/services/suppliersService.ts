@@ -20,11 +20,11 @@ export interface Supplier {
   productCategories?: string | null;
   leadTime?: number | null;
   taxExempt?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export type InsertSupplier = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt'>;
+export type InsertSupplier = Omit<Supplier, 'id' | 'created_at' | 'updated_at'>;
 export type UpdateSupplier = Partial<InsertSupplier>;
 
 // Helper function to normalize the data from the database to our Supplier interface
@@ -35,49 +35,100 @@ const normalizeSupplierData = (data: any): Supplier => {
     status = status === 'Regular' || status === 'New' ? 'Active' : 'Inactive';
   }
   
-  // The database column is "contactperson" (all lowercase, confirmed from error)
-  console.log('Raw supplier data in normalizeSupplierData:', data);
+  // The database column is lowercase "contactperson"
   const contactPerson = data.contactperson || '';
   
-  // Parse additional fields from JSON in notes
-  let parsedNotes: any = {};
-  let notes = '';
+  // Extract additional fields from notes
+  let notes = data.notes || '';
+  let businessType = 'Company';
+  let taxId = '';
+  let industry = '';
+  let relationship_since = null;
+  let alternatePhone = '';
+  let billingAddressSame = true;
+  let billingAddress = null;
+  let paymentTerms = '30 Days Term';
+  let productCategories = '';
+  let leadTime = 7;
+  let taxExempt = false;
   
-  try {
-    if (data.notes && typeof data.notes === 'string') {
-      // Try to parse as JSON first
-      try {
-        parsedNotes = JSON.parse(data.notes);
-        console.log('Successfully parsed notes as JSON:', parsedNotes);
-      } catch (e) {
-        // If it's not valid JSON, just use it as plain text
-        notes = data.notes;
-        console.log('Notes is not JSON, using as plain text');
-      }
-    }
-  } catch (e) {
-    console.error('Error parsing notes:', e);
+  // Extract fields from notes using regex
+  const businessTypeMatch = notes.match(/Business Type: ([^\n]+)/);
+  if (businessTypeMatch && businessTypeMatch[1]) {
+    businessType = businessTypeMatch[1];
   }
   
-  // Extract fields from parsed JSON or use defaults
-  const originalNotes = parsedNotes.originalNotes || '';
-  const businessType = parsedNotes.businessType || data.businessType || 'Company';
-  const taxId = parsedNotes.taxId || data.taxId || '';
-  const industry = parsedNotes.industry || data.industry || '';
-  const relationship_since = parsedNotes.relationship_since || data.relationship_since || null;
-  const alternatePhone = parsedNotes.alternatePhone || data.alternatePhone || '';
-  const billingAddressSame = parsedNotes.billingAddressSame !== undefined ? parsedNotes.billingAddressSame : 
-                            (data.billingAddressSame !== undefined ? data.billingAddressSame : true);
-  const billingAddress = parsedNotes.billingAddress || data.billingAddress || null;
-  const paymentTerms = parsedNotes.paymentTerms || data.paymentTerms || '30 Days Term';
-  const productCategories = parsedNotes.productCategories || data.productCategories || '';
-  const leadTime = parsedNotes.leadTime !== undefined ? parsedNotes.leadTime : 
-                  (data.leadTime !== null && data.leadTime !== undefined ? data.leadTime : 7);
-  const taxExempt = parsedNotes.taxExempt !== undefined ? parsedNotes.taxExempt : 
-                   (data.taxExempt !== undefined ? data.taxExempt : false);
+  const taxIdMatch = notes.match(/Tax ID: ([^\n]+)/);
+  if (taxIdMatch && taxIdMatch[1]) {
+    taxId = taxIdMatch[1];
+  }
   
-  // Use originalNotes if we parsed JSON, otherwise use the notes field directly
-  notes = originalNotes || notes;
+  const industryMatch = notes.match(/Industry: ([^\n]+)/);
+  if (industryMatch && industryMatch[1]) {
+    industry = industryMatch[1];
+  }
+  
+  const relationshipMatch = notes.match(/Relationship Since: ([^\n]+)/);
+  if (relationshipMatch && relationshipMatch[1] && relationshipMatch[1] !== 'Invalid Date') {
+    relationship_since = relationshipMatch[1];
+  }
+  
+  const alternatePhoneMatch = notes.match(/Alternate Phone: ([^\n]+)/);
+  if (alternatePhoneMatch && alternatePhoneMatch[1]) {
+    alternatePhone = alternatePhoneMatch[1];
+  }
+  
+  const billingAddressSameMatch = notes.match(/Billing Address Same: ([^\n]+)/);
+  if (billingAddressSameMatch && billingAddressSameMatch[1]) {
+    billingAddressSame = billingAddressSameMatch[1] === 'Yes';
+  }
+  
+  const billingAddressMatch = notes.match(/Billing Address: ([^\n]+)/);
+  if (billingAddressMatch && billingAddressMatch[1]) {
+    billingAddress = billingAddressMatch[1];
+  }
+  
+  const paymentTermsMatch = notes.match(/Payment Terms: ([^\n]+)/);
+  if (paymentTermsMatch && paymentTermsMatch[1]) {
+    paymentTerms = paymentTermsMatch[1];
+  }
+  
+  const productCategoriesMatch = notes.match(/Product Categories: ([^\n]+)/);
+  if (productCategoriesMatch && productCategoriesMatch[1]) {
+    productCategories = productCategoriesMatch[1];
+  }
+  
+  const leadTimeMatch = notes.match(/Lead Time: (\d+)/);
+  if (leadTimeMatch && leadTimeMatch[1]) {
+    leadTime = parseInt(leadTimeMatch[1], 10);
+  }
+  
+  const taxExemptMatch = notes.match(/Tax Exempt: ([^\n]+)/);
+  if (taxExemptMatch && taxExemptMatch[1]) {
+    taxExempt = taxExemptMatch[1] === 'Yes';
+  }
+  
+  // Clean up notes by removing extracted fields
+  const fieldsToRemove = [
+    /Business Type: [^\n]+\n?/,
+    /Tax ID: [^\n]+\n?/,
+    /Industry: [^\n]+\n?/,
+    /Relationship Since: [^\n]+\n?/,
+    /Alternate Phone: [^\n]+\n?/,
+    /Billing Address Same: [^\n]+\n?/,
+    /Billing Address: [^\n]+\n?/,
+    /Payment Terms: [^\n]+\n?/,
+    /Product Categories: [^\n]+\n?/,
+    /Lead Time: [^\n]+\n?/,
+    /Tax Exempt: [^\n]+\n?/
+  ];
+  
+  fieldsToRemove.forEach(pattern => {
+    notes = notes.replace(pattern, '');
+  });
+  
+  // Clean up any extra newlines
+  notes = notes.replace(/\n{3,}/g, '\n\n').trim();
   
   return {
     id: data.id,
@@ -99,63 +150,57 @@ const normalizeSupplierData = (data: any): Supplier => {
     productCategories: productCategories,
     leadTime: leadTime,
     taxExempt: taxExempt,
-    createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
+    created_at: data.created_at || null,
+    updated_at: data.updated_at || null
   };
 };
 
-// Using minimal fields approach that we know work
+// Modified function to handle all fields safely
 const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => {
-  console.log('Preparing supplier data for database:', supplier);
-  
-  // Only use fields we're 100% sure exist in the database and work
+  // Create database object with required fields
   const dbData: any = {
-    name: supplier.name || 'Unnamed Supplier',
-    contactperson: supplier.contactPerson || 'Unknown Contact' // Lowercase matches the database column
+    name: supplier.name || '',
+    // The column is actually called "contactperson" (lowercase) in the database schema
+    contactperson: supplier.contactPerson || 'Unknown',
+    email: supplier.email || '',
+    phone: supplier.phone || '',
+    status: supplier.status === 'Inactive' ? 'Inactive' : 'Active'
   };
   
-  // Only add email, phone and status if they have values
-  if (supplier.email) dbData.email = supplier.email;
-  if (supplier.phone) dbData.phone = supplier.phone;
-  if (supplier.status) dbData.status = supplier.status;
-  if (supplier.address) dbData.address = supplier.address;
+  // Add optional fields if provided - only those that exist in the schema
+  if (supplier.address !== undefined) dbData.address = supplier.address;
+  if (supplier.notes !== undefined) dbData.notes = supplier.notes;
   
-  // Store all other fields as JSON in notes
-  const extraFields: any = {
-    // Additional fields that may not exist in the database schema
-    businessType: supplier.businessType || 'Company',
-    taxId: supplier.taxId || '',
-    industry: supplier.industry || '',
-    relationship_since: supplier.relationship_since || null,
-    alternatePhone: supplier.alternatePhone || '',
-    billingAddressSame: supplier.billingAddressSame !== undefined ? supplier.billingAddressSame : true,
-    billingAddress: supplier.billingAddress || null,
-    paymentTerms: supplier.paymentTerms || '30 Days Term',
-    leadTime: supplier.leadTime !== undefined ? supplier.leadTime : 7,
-    productCategories: supplier.productCategories || '',
-    taxExempt: supplier.taxExempt !== undefined ? supplier.taxExempt : false
-  };
+  // These fields don't exist in the schema - add them to notes
+  let additionalNotes = '';
   
-  // Add the original notes if any
-  if (supplier.notes) {
-    extraFields.originalNotes = supplier.notes;
+  if (supplier.businessType) additionalNotes += `Business Type: ${supplier.businessType}\n`;
+  if (supplier.taxId) additionalNotes += `Tax ID: ${supplier.taxId}\n`;
+  if (supplier.industry) additionalNotes += `Industry: ${supplier.industry}\n`;
+  if (supplier.relationship_since && supplier.relationship_since !== 'Invalid Date') {
+    additionalNotes += `Relationship Since: ${supplier.relationship_since}\n`;
+  }
+  if (supplier.alternatePhone) additionalNotes += `Alternate Phone: ${supplier.alternatePhone}\n`;
+  if (supplier.billingAddressSame !== undefined) {
+    additionalNotes += `Billing Address Same: ${supplier.billingAddressSame ? 'Yes' : 'No'}\n`;
+  }
+  if (supplier.billingAddress) additionalNotes += `Billing Address: ${supplier.billingAddress}\n`;
+  if (supplier.paymentTerms) additionalNotes += `Payment Terms: ${supplier.paymentTerms}\n`;
+  if (supplier.productCategories) additionalNotes += `Product Categories: ${supplier.productCategories}\n`;
+  if (supplier.leadTime !== undefined) additionalNotes += `Lead Time: ${supplier.leadTime} days\n`;
+  if (supplier.taxExempt !== undefined) additionalNotes += `Tax Exempt: ${supplier.taxExempt ? 'Yes' : 'No'}\n`;
+
+  // Combine with existing notes if any
+  let finalNotes = supplier.notes || '';
+  if (additionalNotes) {
+    finalNotes = finalNotes ? finalNotes + '\n\n' + additionalNotes : additionalNotes;
   }
   
-  // Store all extra fields as JSON in the notes column
-  dbData.notes = JSON.stringify(extraFields);
-  
-  // IMPORTANT: Make sure we never include these problem fields
-  delete dbData.updatedAt;
-  delete dbData.updated_at;
-  delete dbData.createdAt; 
-  delete dbData.created_at;
-  
-  console.log('Final data for database:', dbData);
-  
-  // Remove timestamp fields that cause errors
-  delete dbData.createdAt;
-  delete dbData.updatedAt;
-  
+  // Override notes with combined notes
+  if (finalNotes) {
+    dbData.notes = finalNotes;
+  }
+
   console.log('Final prepared data for database:', dbData);
   return dbData;
 };
@@ -164,11 +209,6 @@ export const suppliersService = {
   async getSuppliers(): Promise<Supplier[]> {
     try {
       console.log('Fetching suppliers...');
-      
-      // Run schema test first to identify available columns
-      const { testSupplierColumns } = await import('../supabaseClient');
-      const result = await testSupplierColumns();
-      console.log('Supplier column test result:', result);
       
       const { data, error } = await supabase
         .from('suppliers')
@@ -253,89 +293,41 @@ export const suppliersService = {
     try {
       console.log(`Updating supplier ${id} with data:`, supplier);
       const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
-      console.log(`Converted ID for update: ${numericId}, type: ${typeof numericId}`);
       
-      // First verify the supplier exists and get the current data
-      console.log(`Checking if supplier with ID ${numericId} exists...`);
+      // First verify the supplier exists
       const { data: existingSupplier, error: checkError } = await supabase
         .from('suppliers')
         .select('*')
         .eq('id', numericId)
         .single();
-      
-      console.log('Existing supplier data:', existingSupplier);
         
       if (checkError || !existingSupplier) {
         console.error(`Supplier with id ${numericId} not found:`, checkError);
         throw new Error(`Supplier with id ${numericId} not found`);
       }
       
-      // This is a radical approach: Instead of updating, we'll delete and re-insert
-      // This avoids any issues with update triggers and the updatedAt field
-      console.log('Using delete + insert approach to avoid updatedAt error');
-      
-      // First, delete the existing supplier
-      const { error: deleteError } = await supabase
-        .from('suppliers')
-        .delete()
-        .eq('id', numericId);
-        
-      if (deleteError) {
-        console.error(`Error deleting supplier ${numericId}:`, deleteError);
-        throw new Error(deleteError.message);
-      }
-      
       // Convert supplier data to match database schema
       const supplierData = prepareSupplierDataForDb(supplier);
-      console.log('Prepared data for database re-insert:', supplierData);
+      console.log('Prepared data for database update:', supplierData);
       
-      // Ensure we preserve the ID
-      supplierData.id = numericId;
-      
-      // Now re-insert the supplier with the same ID
-      const { data: insertedData, error: insertError } = await supabase
+      // Actually update the supplier in the database
+      const { data, error } = await supabase
         .from('suppliers')
-        .insert([supplierData])
+        .update(supplierData)
+        .eq('id', numericId)
         .select()
         .single();
-        
-      if (insertError) {
-        console.error(`Error re-inserting supplier ${numericId}:`, insertError);
-        
-        // Emergency fallback: If re-insert fails, try to restore the original data
-        console.log('Re-insert failed, attempting to restore original data');
-        
-        // Prepare the original data for re-insertion
-        const originalData = {
-          id: numericId,
-          name: existingSupplier.name,
-          contactperson: existingSupplier.contactperson,
-          email: existingSupplier.email,
-          phone: existingSupplier.phone,
-          status: existingSupplier.status,
-          address: existingSupplier.address,
-          notes: existingSupplier.notes
-        };
-        
-        const { error: restoreError } = await supabase
-          .from('suppliers')
-          .insert([originalData]);
-          
-        if (restoreError) {
-          console.error(`Failed to restore original data for supplier ${numericId}:`, restoreError);
-        } else {
-          console.log(`Successfully restored original data for supplier ${numericId}`);
-        }
-        
-        throw new Error(insertError.message);
+      
+      if (error) {
+        console.error(`Error updating supplier with id ${numericId}:`, error);
+        throw new Error(error.message);
       }
       
-      if (!insertedData) {
-        throw new Error(`Re-insert failed for supplier with id ${numericId} - no data returned`);
+      if (!data) {
+        throw new Error(`Update failed for supplier with id ${numericId}`);
       }
       
-      console.log('Successfully updated supplier using delete+insert approach:', insertedData);
-      return normalizeSupplierData(insertedData);
+      return normalizeSupplierData(data);
     } catch (error) {
       console.error('Unexpected error in updateSupplier:', error);
       throw error;
@@ -349,7 +341,7 @@ export const suppliersService = {
       const { data, error } = await supabase
         .from('suppliers')
         .select('*')
-        .or(`name.ilike.${searchTerm},contactperson.ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
+        .or(`name.ilike.${searchTerm},contactPerson.ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
         .order('name');
 
       if (error) {
