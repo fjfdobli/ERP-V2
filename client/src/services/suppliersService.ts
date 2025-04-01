@@ -155,13 +155,13 @@ const normalizeSupplierData = (data: any): Supplier => {
   };
 };
 
-// Modified function to handle all fields safely
+// Modified function to handle all fields safely and avoid field name mismatches
 const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => {
-  // Create database object with required fields
+  // First, create a base object with only fields we know exist in the database
+  // IMPORTANT: Use the exact field names that exist in the Supabase database
   const dbData: any = {
     name: supplier.name || '',
-    // The column is actually called "contactperson" (lowercase) in the database schema
-    contactperson: supplier.contactPerson || 'Unknown',
+    contactperson: supplier.contactPerson || 'Unknown', // Using lowercase as in the database
     email: supplier.email || '',
     phone: supplier.phone || '',
     status: supplier.status === 'Inactive' ? 'Inactive' : 'Active'
@@ -169,9 +169,8 @@ const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => 
   
   // Add optional fields if provided - only those that exist in the schema
   if (supplier.address !== undefined) dbData.address = supplier.address;
-  if (supplier.notes !== undefined) dbData.notes = supplier.notes;
   
-  // These fields don't exist in the schema - add them to notes
+  // These fields don't exist in the schema directly - add them to notes
   let additionalNotes = '';
   
   if (supplier.businessType) additionalNotes += `Business Type: ${supplier.businessType}\n`;
@@ -196,11 +195,18 @@ const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => 
     finalNotes = finalNotes ? finalNotes + '\n\n' + additionalNotes : additionalNotes;
   }
   
-  // Override notes with combined notes
+  // Set the notes field
   if (finalNotes) {
     dbData.notes = finalNotes;
   }
 
+  // IMPORTANT: Make sure we're not sending any fields that don't exist in the database
+  // Explicitly delete any automatically added timestamp fields that could cause issues
+  delete dbData.createdAt;
+  delete dbData.updatedAt;
+  delete dbData.created_at;
+  delete dbData.updated_at;
+  
   console.log('Final prepared data for database:', dbData);
   return dbData;
 };
