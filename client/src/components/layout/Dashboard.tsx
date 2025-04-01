@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
-import { AppBar, Box, CssBaseline, Divider, Drawer, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, Button, Avatar, Menu, MenuItem, Tooltip, Badge, useMediaQuery, Collapse } from '@mui/material';
-import { Menu as MenuIcon, Dashboard as DashboardIcon, People as ClientsIcon, ShoppingCart as OrdersIcon, Inventory as InventoryIcon, Group as EmployeesIcon, LocalShipping as SuppliersIcon, HowToReg as AttendanceIcon, Build as MachineryIcon, BarChart as ReportsIcon, Notifications as NotificationsIcon, AccountCircle, Settings, ExitToApp, ChevronLeft, ExpandLess, ExpandMore, RequestQuote as RequestIcon, ImportContacts as ClientRequestIcon, Source as SupplierRequestIcon, Payments as PayrollIcon } from '@mui/icons-material';
+import { AppBar, Box, CssBaseline, Divider, Drawer, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, Button, Avatar, Menu, MenuItem, useMediaQuery, Collapse } from '@mui/material';
+import { Menu as MenuIcon, Dashboard as DashboardIcon, People as ClientsIcon, ShoppingCart as OrdersIcon, Inventory as InventoryIcon, Group as EmployeesIcon, LocalShipping as SuppliersIcon, HowToReg as AttendanceIcon, Build as MachineryIcon, BarChart as ReportsIcon, AccountCircle, Settings, ExitToApp, ChevronLeft, ExpandLess, ExpandMore, RequestQuote as RequestIcon, ImportContacts as ClientRequestIcon, Source as SupplierRequestIcon, Payments as PayrollIcon } from '@mui/icons-material';
 import PrintIcon from '@mui/icons-material/Print';
 
 const drawerWidth = 260;
@@ -76,12 +76,6 @@ const DashboardLayout: React.FC = () => {
   const handleSettingsClick = () => {
     setUserMenuAnchor(null);
     navigate('/settings');
-  };
-
-  interface NotificationsOpenEvent extends React.MouseEvent<HTMLButtonElement> {}
-
-  const handleNotificationsOpen = (event: NotificationsOpenEvent) => {
-    setNotificationsAnchor(event.currentTarget);
   };
 
   const handleNotificationsClose = () => {
@@ -317,18 +311,6 @@ const DashboardLayout: React.FC = () => {
           >
             {getPageTitle()}
           </Typography>
-          
-          <Tooltip title="Notifications">
-            <IconButton 
-              color="inherit" 
-              onClick={handleNotificationsOpen}
-              sx={{ mr: 1 }}
-            >
-              <Badge badgeContent={3} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
-          </Tooltip>
           
           <Menu
             anchorEl={notificationsAnchor}
