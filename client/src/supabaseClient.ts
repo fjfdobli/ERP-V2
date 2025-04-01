@@ -3,10 +3,13 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = 'https://iyjfpkcxwljfkxbjagbd.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5amZwa2N4d2xqZmt4YmphZ2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI2Njg5NzUsImV4cCI6MjA1ODI0NDk3NX0.0fJgoMe23ZPE1Rgz70RFwV31c3qRGnt1Cciz-x_F0io';
 
+// Enhanced client configuration for better auth handling
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    autoRefreshToken: true
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    storage: localStorage
   },
   global: {
     headers: {
@@ -17,6 +20,52 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     schema: 'public'
   }
 });
+
+
+export const verifySupabaseConnection = async () => {
+  try {
+    const { error } = await supabase
+      .from('user_profiles')
+      .select('count')
+      .limit(1);
+    
+    if (error) {
+      console.error('Cannot connect to Supabase:', error);
+      return { success: false, message: 'Connection error', error };
+    }
+    
+    console.log('Supabase connection verified successfully');
+    return { success: true, message: 'Connection successful' };
+  } catch (err) {
+    console.error('Unexpected error testing Supabase connection:', err);
+    return { success: false, message: 'Connection test failed', error: err };
+  }
+};
+
+export const verifyCredentials = async (email: string, password: string) => {
+  try {
+    console.log('Testing credentials for:', email);
+    
+    // First sign out to clear any session issues
+    await supabase.auth.signOut();
+    
+    // Try direct sign-in with exact credentials
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.toLowerCase().trim(),
+      password
+    });
+    
+    if (error) {
+      console.error('Verification error:', error.message, error.status);
+      return { success: false, message: error.message, error };
+    }
+    
+    return { success: true, message: 'Credentials valid', session: data.session };
+  } catch (error: any) {
+    console.error('Unexpected verification error:', error);
+    return { success: false, message: error.message || 'Verification failed', error };
+  }
+};
 
 export const testTableAccess = async () => {
   try {
@@ -234,6 +283,13 @@ export const runMigrations = async () => {
     return { success: false, message: 'Migration execution failed', error: err };
   }
 };
+
+// Run connection verification on startup
+verifySupabaseConnection().then(result => {
+  console.log('Supabase connection check:', result.success ? 'OK' : 'Failed');
+}).catch(err => {
+  console.error('Connection verification error:', err);
+});
 
 // Migration disabled due to RPC errors
 // runMigrations().then(result => {

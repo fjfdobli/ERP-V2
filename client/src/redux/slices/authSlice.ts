@@ -112,24 +112,38 @@ export const login = createAsyncThunk(
   'auth/login',
   async ({ email, password }: { email: string; password: string }, { rejectWithValue }) => {
     try {
+      console.log('Login attempt started with email:', email);
+      
+      // Verify we're using the correct Supabase client
+      console.log('Supabase client instance:', supabase);
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
       
       if (error) {
-        console.error('Login error:', error);
+        console.error('Login error details:', {
+          message: error.message,
+          status: error.status,
+          code: error.code
+        });
         return rejectWithValue(error.message);
       }
       
+      console.log('Login successful, user data received');
+      
       if (!data?.session?.access_token) {
+        console.error('Invalid response format: missing access token');
         return rejectWithValue('Invalid response format from server');
       }
       
       localStorage.setItem('token', data.session.access_token);
       
       try {
+        console.log('Getting or creating user profile');
         const userProfile = await getOrCreateUserProfile(data.user);
+        console.log('User profile retrieved:', userProfile ? 'success' : 'failure');
         return { 
           session: data.session, 
           user: userProfile 
