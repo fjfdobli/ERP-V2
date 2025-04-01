@@ -20,11 +20,11 @@ export interface Supplier {
   productCategories?: string | null;
   leadTime?: number | null;
   taxExempt?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export type InsertSupplier = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt'>;
+export type InsertSupplier = Omit<Supplier, 'id' | 'created_at' | 'updated_at'>;
 export type UpdateSupplier = Partial<InsertSupplier>;
 
 // Helper function to normalize the data from the database to our Supplier interface
@@ -98,8 +98,8 @@ const normalizeSupplierData = (data: any): Supplier => {
     productCategories: productCategories,
     leadTime: leadTime,
     taxExempt: taxExempt,
-    createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
+    created_at: data.created_at || null,
+    updated_at: data.updated_at || null
   };
 };
 
@@ -142,8 +142,8 @@ const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => 
   dbData.notes = JSON.stringify(allFields);
   
   // Remove timestamp fields that cause errors
-  delete dbData.createdAt;
-  delete dbData.updatedAt;
+  delete dbData.created_at;
+  delete dbData.updated_at;
   
   return dbData;
 };
