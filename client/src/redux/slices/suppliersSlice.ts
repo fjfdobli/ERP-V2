@@ -1,3 +1,4 @@
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { supabase } from '../../supabaseClient';
 
 export interface Supplier {
@@ -147,6 +148,61 @@ const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => 
   
   return dbData;
 };
+
+// Define state type
+interface SuppliersState {
+  suppliers: Supplier[];
+  isLoading: boolean;
+  error: string | null;
+}
+
+// Initial state
+const initialState: SuppliersState = {
+  suppliers: [],
+  isLoading: false,
+  error: null
+};
+
+// Define thunk for fetching suppliers
+export const fetchSuppliers = createAsyncThunk(
+  'suppliers/fetchSuppliers',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await suppliersService.getSuppliers();
+    } catch (error: any) {
+      return rejectWithValue(error.message || 'Failed to fetch suppliers');
+    }
+  }
+);
+
+// Create suppliers slice
+const suppliersSlice = createSlice({
+  name: 'suppliers',
+  initialState,
+  reducers: {
+    clearSuppliersError: (state) => {
+      state.error = null;
+    }
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchSuppliers.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(fetchSuppliers.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.suppliers = action.payload;
+      })
+      .addCase(fetchSuppliers.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
+  }
+});
+
+export const { clearSuppliersError } = suppliersSlice.actions;
+export default suppliersSlice.reducer;
 
 export const suppliersService = {
   async getSuppliers(): Promise<Supplier[]> {
