@@ -20,11 +20,11 @@ export interface Supplier {
   productCategories?: string | null;
   leadTime?: number | null;
   taxExempt?: boolean;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export type InsertSupplier = Omit<Supplier, 'id' | 'created_at' | 'updated_at'>;
+export type InsertSupplier = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt'>;
 export type UpdateSupplier = Partial<InsertSupplier>;
 
 // Helper function to normalize the data from the database to our Supplier interface
@@ -35,8 +35,8 @@ const normalizeSupplierData = (data: any): Supplier => {
     status = status === 'Regular' || status === 'New' ? 'Active' : 'Inactive';
   }
   
-  // The database column is lowercase "contactperson"
-  const contactPerson = data.contactperson || '';
+  // The database column is "contactPerson" with capital P per the schema
+  const contactPerson = data.contactPerson || '';
   
   // Extract additional fields from notes
   let notes = data.notes || '';
@@ -150,8 +150,8 @@ const normalizeSupplierData = (data: any): Supplier => {
     productCategories: productCategories,
     leadTime: leadTime,
     taxExempt: taxExempt,
-    created_at: data.created_at || null,
-    updated_at: data.updated_at || null
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null
   };
 };
 
@@ -161,7 +161,7 @@ const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => 
   // IMPORTANT: Use the exact field names that exist in the Supabase database
   const dbData: any = {
     name: supplier.name || '',
-    contactperson: supplier.contactPerson || 'Unknown', // Using lowercase as in the database
+    contactPerson: supplier.contactPerson || 'Unknown', // Using capital P as in the database schema
     email: supplier.email || '',
     phone: supplier.phone || '',
     status: supplier.status === 'Inactive' ? 'Inactive' : 'Active'
@@ -204,8 +204,6 @@ const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => 
   // Explicitly delete any automatically added timestamp fields that could cause issues
   delete dbData.createdAt;
   delete dbData.updatedAt;
-  delete dbData.created_at;
-  delete dbData.updated_at;
   
   console.log('Final prepared data for database:', dbData);
   return dbData;
@@ -318,9 +316,10 @@ export const suppliersService = {
       
       // We'll use a direct approach with explicit fields to avoid timing issues
       // Create a new object with only the fields we want to update
+      // IMPORTANT: Use exact field names from the actual schema
       const updateData = {
         name: supplierData.name,
-        contactperson: supplierData.contactperson,
+        contactPerson: supplierData.contactPerson,
         email: supplierData.email || '',
         phone: supplierData.phone || '',
         status: supplierData.status,
@@ -361,7 +360,7 @@ export const suppliersService = {
       const { data, error } = await supabase
         .from('suppliers')
         .select('*')
-        .or(`name.ilike.${searchTerm},contactPerson.ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
+        .or(`name.ilike.${searchTerm},\"contactPerson\".ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
         .order('name');
 
       if (error) {
