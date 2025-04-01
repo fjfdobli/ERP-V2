@@ -35,8 +35,15 @@ const normalizeSupplierData = (data: any): Supplier => {
     status = status === 'Regular' || status === 'New' ? 'Active' : 'Inactive';
   }
   
-  // The database column is "contactPerson" with capital P per the schema
-  const contactPerson = data.contactPerson || '';
+  // Try different variations of the contact person field name
+  let contactPerson = '';
+  if (data.contactPerson !== undefined) {
+    contactPerson = data.contactPerson;
+  } else if (data.contactperson !== undefined) {
+    contactPerson = data.contactperson;
+  } else if (data.contact_person !== undefined) {
+    contactPerson = data.contact_person;
+  }
   
   // Extract additional fields from notes
   let notes = data.notes || '';
@@ -158,14 +165,17 @@ const normalizeSupplierData = (data: any): Supplier => {
 // Modified function to handle all fields safely and avoid field name mismatches
 const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => {
   // First, create a base object with only fields we know exist in the database
-  // IMPORTANT: Use the exact field names that exist in the Supabase database
+  // We'll exclude the contact person field and add it dynamically later
   const dbData: any = {
     name: supplier.name || '',
-    contactPerson: supplier.contactPerson || 'Unknown', // Using capital P as in the database schema
     email: supplier.email || '',
     phone: supplier.phone || '',
     status: supplier.status === 'Inactive' ? 'Inactive' : 'Active'
   };
+  
+  // We'll try both camelCase and lowercase versions of contactperson
+  // Only one will actually make it to the database
+  dbData.contactperson = supplier.contactPerson || 'Unknown';  // lowercase version
   
   // Add optional fields if provided - only those that exist in the schema
   if (supplier.address !== undefined) dbData.address = supplier.address;
@@ -298,7 +308,7 @@ export const suppliersService = {
       console.log(`Updating supplier ${id} with data:`, supplier);
       const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
       
-      // First verify the supplier exists
+      // First verify the supplier exists and get the column names
       const { data: existingSupplier, error: checkError } = await supabase
         .from('suppliers')
         .select('*')
@@ -310,16 +320,29 @@ export const suppliersService = {
         throw new Error(`Supplier with id ${numericId} not found`);
       }
       
+      // Log the available column names to understand the schema
+      console.log('Available column names in existing supplier:', Object.keys(existingSupplier));
+      
       // Convert supplier data to match database schema
       const supplierData = prepareSupplierDataForDb(supplier);
       console.log('Prepared data for database update:', supplierData);
       
-      // We'll use a direct approach with explicit fields to avoid timing issues
+      // Find out the actual contactPerson field name
+      let contactFieldName = 'contactperson'; // Default to lowercase
+      if (Object.keys(existingSupplier).includes('contactPerson')) {
+        contactFieldName = 'contactPerson';
+      } else if (Object.keys(existingSupplier).includes('contactperson')) {
+        contactFieldName = 'contactperson';
+      } else if (Object.keys(existingSupplier).includes('contact_person')) {
+        contactFieldName = 'contact_person';
+      }
+      
+      console.log('Detected contact field name:', contactFieldName);
+      
       // Create a new object with only the fields we want to update
-      // IMPORTANT: Use exact field names from the actual schema
-      const updateData = {
+      // We'll use a more flexible approach
+      const updateData: any = {
         name: supplierData.name,
-        contactPerson: supplierData.contactPerson,
         email: supplierData.email || '',
         phone: supplierData.phone || '',
         status: supplierData.status,
@@ -327,7 +350,10 @@ export const suppliersService = {
         notes: supplierData.notes || null
       };
       
-      console.log('Using explicit update object:', updateData);
+      // Add the contact person field with the right name
+      updateData[contactFieldName] = supplierData.contactPerson;
+      
+      console.log('Using dynamic update object with detected field names:', updateData);
       
       // Use direct UPDATE with select
       const { data, error } = await supabase
@@ -357,14 +383,15 @@ export const suppliersService = {
     try {
       const searchTerm = `%${query}%`;
       
+      // First, let's try with a simple 'name' search to avoid field name issues
       const { data, error } = await supabase
         .from('suppliers')
         .select('*')
-        .or(`name.ilike.${searchTerm},\"contactPerson\".ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
+        .ilike('name', searchTerm)
         .order('name');
 
       if (error) {
-        console.error('Error searching suppliers:', error);
+        console.error('Error searching suppliers by name:', error);
         return [];
       }
 
