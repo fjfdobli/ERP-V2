@@ -520,10 +520,19 @@ const SuppliersList: React.FC = () => {
   };
 
   const handleDateChange = (date: Date | null) => {
-    setFormData(prev => ({
-      ...prev,
-      relationship_since: date
-    }));
+    // Check if the date is valid before setting it
+    if (date && !isNaN(date.getTime())) {
+      setFormData(prev => ({
+        ...prev,
+        relationship_since: date
+      }));
+    } else {
+      // If invalid date, set to null
+      setFormData(prev => ({
+        ...prev,
+        relationship_since: null
+      }));
+    }
   };
 
   const handleSubmit = async () => {
@@ -575,7 +584,7 @@ const SuppliersList: React.FC = () => {
         ].filter(Boolean).join(', ') : null;
 
       let relationshipSince: string | undefined = undefined;
-      if (formData.relationship_since) {
+      if (formData.relationship_since && formData.relationship_since instanceof Date && !isNaN(formData.relationship_since.getTime())) {
         relationshipSince = formData.relationship_since.toISOString().split('T')[0]; 
       }
       
@@ -879,7 +888,14 @@ const SuppliersList: React.FC = () => {
                     label="Relationship Since"
                     value={formData.relationship_since}
                     onChange={handleDateChange}
-                    slotProps={{ textField: { fullWidth: true } }}
+                    slotProps={{ 
+                      textField: { 
+                        fullWidth: true,
+                        inputProps: {
+                          readOnly: true
+                        }
+                      } 
+                    }}
                   />
                 </LocalizationProvider>
               </Grid>
