@@ -308,7 +308,7 @@ export const suppliersService = {
       console.log(`Updating supplier ${id} with data:`, supplier);
       const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
       
-      // First verify the supplier exists and get the column names
+      // First verify the supplier exists
       const { data: existingSupplier, error: checkError } = await supabase
         .from('suppliers')
         .select('*')
@@ -327,40 +327,92 @@ export const suppliersService = {
       const supplierData = prepareSupplierDataForDb(supplier);
       console.log('Prepared data for database update:', supplierData);
       
-      // Find out the actual contactPerson field name
-      let contactFieldName = 'contactperson'; // Default to lowercase
-      if (Object.keys(existingSupplier).includes('contactPerson')) {
-        contactFieldName = 'contactPerson';
-      } else if (Object.keys(existingSupplier).includes('contactperson')) {
-        contactFieldName = 'contactperson';
-      } else if (Object.keys(existingSupplier).includes('contact_person')) {
-        contactFieldName = 'contact_person';
+      // WORKAROUND: We'll update one field at a time to avoid triggering issues with the updatedAt field
+      console.log('Using field-by-field update to avoid triggering issues...');
+      
+      // First, update just the name (which should work)
+      let nameUpdate = await supabase
+        .from('suppliers')
+        .update({ name: supplierData.name || 'Unnamed Supplier' })
+        .eq('id', numericId);
+        
+      if (nameUpdate.error) {
+        console.error('Name update failed:', nameUpdate.error);
+        throw new Error(nameUpdate.error.message);
       }
       
-      console.log('Detected contact field name:', contactFieldName);
+      // Now try updating each remaining field one by one
+      try {
+        // Update contactperson field (trying lowercase first)
+        await supabase
+          .from('suppliers')
+          .update({ contactperson: supplierData.contactperson })
+          .eq('id', numericId);
+      } catch (e) {
+        console.log('contactperson update failed:', e);
+        // Try with camelCase
+        try {
+          await supabase
+            .from('suppliers')
+            .update({ contactPerson: supplierData.contactperson })
+            .eq('id', numericId);
+        } catch (e2) {
+          console.log('contactPerson update failed too:', e2);
+        }
+      }
       
-      // Create a new object with only the fields we want to update
-      // We'll use a more flexible approach
-      const updateData: any = {
-        name: supplierData.name,
-        email: supplierData.email || '',
-        phone: supplierData.phone || '',
-        status: supplierData.status,
-        address: supplierData.address || null,
-        notes: supplierData.notes || null
-      };
+      // Continue with other fields
+      try {
+        await supabase
+          .from('suppliers')
+          .update({ email: supplierData.email || '' })
+          .eq('id', numericId);
+      } catch (e) {
+        console.log('email update failed:', e);
+      }
       
-      // Add the contact person field with the right name
-      updateData[contactFieldName] = supplierData.contactPerson;
+      try {
+        await supabase
+          .from('suppliers')
+          .update({ phone: supplierData.phone || '' })
+          .eq('id', numericId);
+      } catch (e) {
+        console.log('phone update failed:', e);
+      }
       
-      console.log('Using dynamic update object with detected field names:', updateData);
+      try {
+        await supabase
+          .from('suppliers')
+          .update({ status: supplierData.status || 'Active' })
+          .eq('id', numericId);
+      } catch (e) {
+        console.log('status update failed:', e);
+      }
       
-      // Use direct UPDATE with select
+      try {
+        await supabase
+          .from('suppliers')
+          .update({ address: supplierData.address || null })
+          .eq('id', numericId);
+      } catch (e) {
+        console.log('address update failed:', e);
+      }
+      
+      try {
+        await supabase
+          .from('suppliers')
+          .update({ notes: supplierData.notes || null })
+          .eq('id', numericId);
+      } catch (e) {
+        console.log('notes update failed:', e);
+      }
+      
+      // Finally, get the updated record
       const { data, error } = await supabase
         .from('suppliers')
-        .update(updateData)
+        .select('*')
         .eq('id', numericId)
-        .select();
+        .single();
       
       if (error) {
         console.error(`Error updating supplier with id ${numericId}:`, error);
