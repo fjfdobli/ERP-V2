@@ -20,11 +20,11 @@ export interface Supplier {
   productCategories?: string | null;
   leadTime?: number | null;
   taxExempt?: boolean;
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export type InsertSupplier = Omit<Supplier, 'id' | 'created_at' | 'updated_at'>;
+export type InsertSupplier = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt'>;
 export type UpdateSupplier = Partial<InsertSupplier>;
 
 // Helper function to normalize the data from the database to our Supplier interface
@@ -35,8 +35,8 @@ const normalizeSupplierData = (data: any): Supplier => {
     status = status === 'Regular' || status === 'New' ? 'Active' : 'Inactive';
   }
   
-  // The database column is "contactperson" (all lowercase, confirmed from error)
-  const contactPerson = data.contactperson || '';
+  // The database column is "contactPerson" (camelCase, confirmed from schema)
+  const contactPerson = data.contactPerson || '';
   
   // Parse additional fields from JSON in notes
   let parsedNotes: any = {};
@@ -98,17 +98,17 @@ const normalizeSupplierData = (data: any): Supplier => {
     productCategories: productCategories,
     leadTime: leadTime,
     taxExempt: taxExempt,
-    created_at: data.created_at || null,
-    updated_at: data.updated_at || null
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null
   };
 };
 
-// Now we know the exact field name: contactperson (lowercase)
+// Now we know the exact field name: contactPerson (camelCase)
 const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => {
-  // Use the required fields with the exact names from the database error
+  // Use the required fields with the exact names from the database schema
   const dbData: any = {
     name: supplier.name || 'Unnamed Supplier',
-    contactperson: supplier.contactPerson || 'Unknown' // The DB requires this exact field name (lowercase)
+    contactPerson: supplier.contactPerson || 'Unknown' // The DB field is camelCase per schema
   };
   
   // Store all fields in a JSON string in the notes field
@@ -142,8 +142,8 @@ const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => 
   dbData.notes = JSON.stringify(allFields);
   
   // Remove timestamp fields that cause errors
-  delete dbData.created_at;
-  delete dbData.updated_at;
+  delete dbData.createdAt;
+  delete dbData.updatedAt;
   
   return dbData;
 };
@@ -331,7 +331,7 @@ export const suppliersService = {
       const { data, error } = await supabase
         .from('suppliers')
         .select('*')
-        .or(`name.ilike.${searchTerm},contactperson.ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
+        .or(`name.ilike.${searchTerm},\"contactPerson\".ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
         .order('name');
 
       if (error) {
