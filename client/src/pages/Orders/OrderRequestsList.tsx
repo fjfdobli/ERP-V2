@@ -265,7 +265,11 @@ const OrderRequestForm: React.FC<OrderRequestFormProps> = ({ open, onClose, onSu
               label="Client"
             >
               {clients
-                .filter(client => client.status !== 'Inactive' || client.id === clientId)
+                .filter(client => {
+                  // In edit mode, show the current client even if inactive
+                  // In create mode, only show active clients
+                  return client.status !== 'Inactive' || (isEdit && client.id === clientId);
+                })
                 .map((client) => (
                   <MenuItem 
                     key={client.id} 
@@ -542,7 +546,7 @@ const OrderRequestsList: React.FC = () => {
   }, [orderRequests]);
   
   const availableClients = useMemo(() => {
-    return clients.filter(client => !clientsWithOrders.has(client.id));
+    return clients.filter(client => !clientsWithOrders.has(client.id) && client.status !== 'Inactive');
   }, [clients, clientsWithOrders]);
 
   const isClientInactive = (clientId: number): boolean => {
@@ -943,7 +947,7 @@ const OrderRequestsList: React.FC = () => {
           open={formOpen}
           onClose={handleCloseForm}
           onSubmit={handleSubmitRequest}
-          clients={isEdit ? clients : availableClients.filter(client => client.status !== 'Inactive')}
+          clients={isEdit ? clients : availableClients}
           products={products}
           initialData={currentRequest}
           isEdit={isEdit}

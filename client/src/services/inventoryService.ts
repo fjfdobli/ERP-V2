@@ -7,41 +7,29 @@ export interface InventoryItem {
   type: string;
   quantity: number;
   min_stock: number;
+  unit_price: number;
+  supplier_id?: number;
+  description?: string;
+  location?: string;
   created_at: string;
+  updated_at?: string;
 }
 
-export type InsertInventoryItem = Omit<InventoryItem, 'id' | 'created_at'>;
-export type UpdateInventoryItem = Partial<InsertInventoryItem>;
+export interface InventoryTransaction {
+  id?: number;
+  inventory_id: number;
+  transaction_type: string; // 'stock_in', 'stock_out', 'adjustment', 'order'
+  quantity: number;
+  order_id?: string;
+  order_request_id?: number;
+  created_by: string;
+  notes?: string;
+  created_at?: string;
+}
 
-const mockInventoryItems: InventoryItem[] = [
-  {
-    id: 1,
-    item_name: 'A4 Paper',
-    sku: 'PPR-A4-001',
-    type: 'Paper',
-    quantity: 500,
-    min_stock: 100,
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 2,
-    item_name: 'Black Ink',
-    sku: 'INK-BLK-001',
-    type: 'Ink',
-    quantity: 5,
-    min_stock: 10,
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 3,
-    item_name: 'Cyan Ink',
-    sku: 'INK-CYN-001',
-    type: 'Ink',
-    quantity: 8,
-    min_stock: 10,
-    created_at: new Date().toISOString()
-  }
-];
+export type InsertInventoryItem = Omit<InventoryItem, 'id' | 'created_at' | 'updated_at'>;
+export type UpdateInventoryItem = Partial<InsertInventoryItem>;
+export type InsertInventoryTransaction = Omit<InventoryTransaction, 'id' | 'created_at'>;
 
 export const inventoryService = {
   async getInventoryItems() {
@@ -53,13 +41,13 @@ export const inventoryService = {
       
       if (error) {
         console.error('Error fetching inventory items:', error);
-        return mockInventoryItems;
+        throw error;
       }
       
-      return data || mockInventoryItems;
+      return data || [];
     } catch (error) {
       console.error('Unexpected error in getInventoryItems:', error);
-      return mockInventoryItems;
+      throw error;
     }
   },
   
@@ -73,15 +61,33 @@ export const inventoryService = {
       
       if (error) {
         console.error(`Error fetching inventory item with ID ${id}:`, error);
-        const mockItem = mockInventoryItems.find(item => item.id === id);
-        return mockItem || mockInventoryItems[0];
+        throw error;
       }
       
       return data;
     } catch (error) {
       console.error(`Unexpected error in getInventoryItemById:`, error);
-      const mockItem = mockInventoryItems.find(item => item.id === id);
-      return mockItem || mockInventoryItems[0];
+      throw error;
+    }
+  },
+  
+  async getInventoryItemByName(name: string) {
+    try {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('*')
+        .ilike('item_name', name)
+        .single();
+      
+      if (error) {
+        console.error(`Error fetching inventory item with name ${name}:`, error);
+        throw error;
+      }
+      
+      return data;
+    } catch (error) {
+      console.error(`Unexpected error in getInventoryItemByName:`, error);
+      throw error;
     }
   },
   
@@ -124,6 +130,70 @@ export const inventoryService = {
     }
   },
   
+  async addInventoryTransaction(transaction: InsertInventoryTransaction) {
+    try {
+      // First, get the current item to verify the quantity
+      const { data: item, error: itemError } = await supabase
+        .from('inventory')
+        .select('quantity')
+        .eq('id', transaction.inventory_id)
+        .single();
+      
+      if (itemError) {
+        console.error(`Error fetching inventory item with ID ${transaction.inventory_id}:`, itemError);
+        throw itemError;
+      }
+      
+      // Calculate new quantity based on transaction type
+      let newQuantity = item.quantity;
+      if (transaction.transaction_type === 'stock_in') {
+        newQuantity += transaction.quantity;
+      } else if (transaction.transaction_type === 'stock_out' || transaction.transaction_type === 'order') {
+        newQuantity = Math.max(0, newQuantity - transaction.quantity);
+      }
+      
+      // Add transaction record
+      const { data: transactionData, error: transactionError } = await supabase
+        .from('inventory_transactions')
+        .insert([{
+          inventory_id: transaction.inventory_id,
+          transaction_type: transaction.transaction_type,
+          quantity: transaction.quantity,
+          order_id: transaction.order_id,
+          order_request_id: transaction.order_request_id,
+          created_by: transaction.created_by,
+          notes: transaction.notes
+        }])
+        .select();
+      
+      if (transactionError) {
+        console.error('Error adding inventory transaction:', transactionError);
+        throw transactionError;
+      }
+      
+      // Update inventory quantity
+      const { data: updatedItem, error: updateError } = await supabase
+        .from('inventory')
+        .update({ quantity: newQuantity })
+        .eq('id', transaction.inventory_id)
+        .select();
+      
+      if (updateError) {
+        console.error(`Error updating inventory quantity for item ID ${transaction.inventory_id}:`, updateError);
+        throw updateError;
+      }
+      
+      return {
+        transaction: transactionData?.[0],
+        newQuantity,
+        item: updatedItem?.[0]
+      };
+    } catch (error) {
+      console.error('Unexpected error in addInventoryTransaction:', error);
+      throw error;
+    }
+  },
+  
   async getLowStockItems() {
     try {
       const { data, error } = await supabase
@@ -133,46 +203,84 @@ export const inventoryService = {
       
       if (error) {
         console.error('Error fetching low stock items:', error);
-        return mockInventoryItems.filter(item => item.quantity < item.min_stock);
-      }
-      
-      return data || mockInventoryItems.filter(item => item.quantity < item.min_stock);
-    } catch (error) {
-      console.error('Unexpected error in getLowStockItems:', error);
-      return mockInventoryItems.filter(item => item.quantity < item.min_stock);
-    }
-  },
-  
-  async restockItem(id: number, quantity: number) {
-    try {
-      const { data: item, error: getError } = await supabase
-        .from('inventory')
-        .select('quantity')
-        .eq('id', id)
-        .single();
-      
-      if (getError) {
-        console.error(`Error fetching inventory item with ID ${id}:`, getError);
-        throw getError;
-      }
-      
-      const newQuantity = (item.quantity || 0) + quantity;
-      
-      const { data, error } = await supabase
-        .from('inventory')
-        .update({ quantity: newQuantity })
-        .eq('id', id)
-        .select();
-      
-      if (error) {
-        console.error(`Error restocking inventory item with ID ${id}:`, error);
         throw error;
       }
       
-      return data?.[0];
+      return data || [];
     } catch (error) {
-      console.error('Unexpected error in restockItem:', error);
+      console.error('Unexpected error in getLowStockItems:', error);
       throw error;
+    }
+  },
+  
+  async processOrderItems(orderRequestId: number, orderId: string, items: any[], createdBy: string = 'system') {
+    try {
+      // Process each item in the order
+      const results = [];
+      
+      for (const item of items) {
+        // Find corresponding inventory item
+        const { data: inventoryItems, error: searchError } = await supabase
+          .from('inventory')
+          .select('*')
+          .ilike('item_name', `%${item.product_name}%`)
+          .limit(1);
+        
+        if (searchError) {
+          console.error(`Error searching for inventory item ${item.product_name}:`, searchError);
+          continue; // Skip this item but process others
+        }
+        
+        if (!inventoryItems || inventoryItems.length === 0) {
+          console.warn(`No matching inventory item found for ${item.product_name}`);
+          continue; // Skip this item but process others
+        }
+        
+        const inventoryItem = inventoryItems[0];
+        
+        // Create transaction to deduct from inventory
+        try {
+          const result = await this.addInventoryTransaction({
+            inventory_id: inventoryItem.id,
+            transaction_type: 'order',
+            quantity: item.quantity,
+            order_id: orderId,
+            order_request_id: orderRequestId,
+            created_by: createdBy,
+            notes: `Deducted for order ${orderId}`
+          });
+          
+          results.push(result);
+        } catch (transactionError) {
+          console.error(`Error processing inventory for ${item.product_name}:`, transactionError);
+          // Continue with other items
+        }
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('Unexpected error in processOrderItems:', error);
+      throw error;
+    }
+  },
+  
+  async getInventoryTransactions(inventoryId: number) {
+    try {
+      const { data, error } = await supabase
+        .from('inventory_transactions')
+        .select('*')
+        .eq('inventory_id', inventoryId)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error(`Error fetching transactions for inventory ID ${inventoryId}:`, error);
+        return [];
+      }
+      
+      return data || [];
+    } catch (error) {
+      console.error('Unexpected error in getInventoryTransactions:', error);
+      return [];
     }
   },
   
@@ -186,21 +294,13 @@ export const inventoryService = {
       
       if (error) {
         console.error('Error searching inventory:', error);
-        return mockInventoryItems.filter(item => 
-          item.item_name.toLowerCase().includes(query.toLowerCase()) ||
-          item.sku.toLowerCase().includes(query.toLowerCase()) ||
-          item.type.toLowerCase().includes(query.toLowerCase())
-        );
+        throw error;
       }
       
-      return data || mockInventoryItems.filter(item => 
-        item.item_name.toLowerCase().includes(query.toLowerCase()) ||
-        item.sku.toLowerCase().includes(query.toLowerCase()) ||
-        item.type.toLowerCase().includes(query.toLowerCase())
-      );
+      return data || [];
     } catch (error) {
       console.error('Unexpected error in searchInventory:', error);
-      return mockInventoryItems;
+      throw error;
     }
   }
-};
+}

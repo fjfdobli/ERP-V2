@@ -3,7 +3,7 @@ import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
 import { AppBar, Box, CssBaseline, Divider, Drawer, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, Button, Avatar, Menu, MenuItem, Tooltip, Badge, useMediaQuery, Collapse } from '@mui/material';
-import { Menu as MenuIcon, Dashboard as DashboardIcon, People as ClientsIcon, ShoppingCart as OrdersIcon, Inventory as InventoryIcon, Group as EmployeesIcon, LocalShipping as SuppliersIcon, Build as MachineryIcon, BarChart as ReportsIcon, Notifications as NotificationsIcon, AccountCircle, Settings, ExitToApp, ChevronLeft, ExpandLess, ExpandMore, RequestQuote as RequestIcon, ImportContacts as ClientRequestIcon, Source as SupplierRequestIcon, Payments as PayrollIcon } from '@mui/icons-material';
+import { Menu as MenuIcon, Dashboard as DashboardIcon, People as ClientsIcon, ShoppingCart as OrdersIcon, Inventory as InventoryIcon, Group as EmployeesIcon, LocalShipping as SuppliersIcon, HowToReg as AttendanceIcon, Build as MachineryIcon, BarChart as ReportsIcon, Notifications as NotificationsIcon, AccountCircle, Settings, ExitToApp, ChevronLeft, ExpandLess, ExpandMore, RequestQuote as RequestIcon, ImportContacts as ClientRequestIcon, Source as SupplierRequestIcon, Payments as PayrollIcon } from '@mui/icons-material';
 import PrintIcon from '@mui/icons-material/Print';
 
 const drawerWidth = 260;
@@ -21,6 +21,7 @@ const menuItems = [
   { text: 'Suppliers', icon: <SuppliersIcon />, path: '/suppliers' },
   { text: 'Inventory', icon: <InventoryIcon />, path: '/inventory' },
   { text: 'Employees', icon: <EmployeesIcon />, path: '/employees' },
+  { text: 'Attendance', icon: <AttendanceIcon />, path: '/attendance' },
   { text: 'Payroll', icon: <PayrollIcon />, path: '/payroll' },
   { text: 'Machinery', icon: <MachineryIcon />, path: '/machinery' },
   { text: 'Reports', icon: <ReportsIcon />, path: '/reports' },

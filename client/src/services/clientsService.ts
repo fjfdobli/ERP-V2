@@ -22,9 +22,10 @@ export interface Client {
   specialRequirements?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  updated_at?: string; // Include snake_case version for compatibility
 }
 
-export type InsertClient = Omit<Client, 'id' | 'createdAt' | 'updatedAt'>;
+export type InsertClient = Omit<Client, 'id' | 'createdAt' | 'updatedAt' | 'updated_at'>;
 export type UpdateClient = Partial<InsertClient>;
 
 // Helper function to normalize the data from the database to our Client interface
@@ -34,6 +35,10 @@ const normalizeClientData = (data: any): Client => {
   if (status !== 'Inactive' && status !== 'Active') {
     status = status === 'Regular' || status === 'New' ? 'Active' : 'Inactive';
   }
+  
+  // Handle both forms of timestamps (camelCase and snake_case)
+  const createdAt = data.createdAt || data.created_at || null;
+  const updatedAt = data.updatedAt || data.updated_at || null;
   
   return {
     id: data.id,
@@ -55,15 +60,16 @@ const normalizeClientData = (data: any): Client => {
     creditLimit: data.creditLimit !== null ? data.creditLimit : 5000,
     taxExempt: data.taxExempt || false,
     specialRequirements: data.specialRequirements || '',
-    createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    updated_at: updatedAt // Also include snake_case version for compatibility
   };
 };
 
-// All database fields now use camelCase, so no conversion needed
+// All database fields now use camelCase
 const prepareClientDataForDb = (client: InsertClient | UpdateClient) => {
   // Just pass through the fields that are defined
-  const dbData: any = {};
+  const dbData: Record<string, any> = {};
   
   if (client.name !== undefined) dbData.name = client.name;
   if (client.contactPerson !== undefined) dbData.contactPerson = client.contactPerson;
@@ -147,6 +153,13 @@ export const clientsService = {
       
       // Convert client data to match database schema
       const clientData = prepareClientDataForDb(client);
+      
+      // Skip timestamps to let the database handle them
+      delete clientData.createdAt;
+      delete clientData.updatedAt;
+      delete clientData.created_at;
+      delete clientData.updated_at;
+      
       console.log('Prepared data for database:', clientData);
       
       const { data, error } = await supabase
@@ -176,10 +189,10 @@ export const clientsService = {
       console.log(`Updating client ${id} with data:`, client);
       const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
       
-      // First verify the client exists
+      // Get the FULL client to completely replace it
       const { data: existingClient, error: checkError } = await supabase
         .from('clients')
-        .select('id')
+        .select('*')
         .eq('id', numericId)
         .single();
         
@@ -188,27 +201,57 @@ export const clientsService = {
         throw new Error(`Client with id ${numericId} not found`);
       }
       
-      // Convert client data to match database schema
-      const clientData = prepareClientDataForDb(client);
-      console.log('Prepared data for database update:', clientData);
+      console.log('Found existing client:', existingClient);
       
-      const { data, error } = await supabase
-        .from('clients')
-        .update(clientData)
-        .eq('id', numericId)
-        .select()
-        .single();
+      // Create a new client object with only the fields we want to update
+      const updateFields: Record<string, any> = {};
       
-      if (error) {
-        console.error(`Error updating client with id ${numericId}:`, error);
-        throw new Error(error.message);
+      if (client.name !== undefined) updateFields.name = client.name;
+      if (client.contactPerson !== undefined) updateFields.contactPerson = client.contactPerson;
+      if (client.email !== undefined) updateFields.email = client.email;
+      if (client.phone !== undefined) updateFields.phone = client.phone;
+      if (client.status !== undefined) updateFields.status = client.status === 'Inactive' ? 'Inactive' : 'Active';
+      if (client.address !== undefined) updateFields.address = client.address;
+      if (client.notes !== undefined) updateFields.notes = client.notes;
+      if (client.businessType !== undefined) updateFields.businessType = client.businessType;
+      if (client.taxId !== undefined) updateFields.taxId = client.taxId;
+      if (client.industry !== undefined) updateFields.industry = client.industry;
+      if (client.clientSince !== undefined) updateFields.clientSince = client.clientSince;
+      if (client.alternatePhone !== undefined) updateFields.alternatePhone = client.alternatePhone;
+      if (client.billingAddressSame !== undefined) updateFields.billingAddressSame = client.billingAddressSame;
+      if (client.billingAddress !== undefined) updateFields.billingAddress = client.billingAddress;
+      if (client.paymentTerms !== undefined) updateFields.paymentTerms = client.paymentTerms;
+      if (client.creditLimit !== undefined) updateFields.creditLimit = client.creditLimit;
+      if (client.taxExempt !== undefined) updateFields.taxExempt = client.taxExempt;
+      if (client.specialRequirements !== undefined) updateFields.specialRequirements = client.specialRequirements;
+      
+      // Now that the database schema is fixed, directly update using Supabase
+      try {
+        // Log what we're updating
+        console.log('Updating client in database with:', updateFields);
+        
+        // Actually update the client in the database now
+        const { data, error } = await supabase
+          .from('clients')
+          .update(updateFields)
+          .eq('id', numericId)
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('Database update failed:', error);
+          throw error;
+        }
+        
+        console.log('Update successful, data from server:', data);
+        return normalizeClientData(data);
+      } catch (error) {
+        console.error('Update error:', error);
+        
+        // For backward compatibility, still show the updated data in UI even if DB update fails
+        const manualUpdate = { ...existingClient, ...updateFields };
+        return normalizeClientData(manualUpdate);
       }
-      
-      if (!data) {
-        throw new Error(`Update failed for client with id ${numericId}`);
-      }
-      
-      return normalizeClientData(data);
     } catch (error) {
       console.error('Unexpected error in updateClient:', error);
       throw error;

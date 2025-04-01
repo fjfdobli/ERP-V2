@@ -25,7 +25,7 @@ import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/common/LoadingScreen';
-
+import AttendanceList from './pages/AttendanceLists'
 interface ProtectedRouteProps {
   children: ReactNode;
 }
@@ -94,6 +94,7 @@ const AppContent: React.FC = () => {
           <Route path="reports" element={<ReportsList />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="attendance" element={<AttendanceList />} />
         </Route>
         
         <Route path="*" element={<NotFound />} />

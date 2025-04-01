@@ -245,7 +245,6 @@ const ClientViewDetails: React.FC<ClientViewDetailsProps> = ({ open, client, onC
   );
 };
 
-// Main Component
 const ClientsList: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState<boolean>(false);

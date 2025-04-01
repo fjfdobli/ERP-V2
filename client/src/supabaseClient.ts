@@ -48,6 +48,71 @@ export const testTableAccess = async () => {
   }
 };
 
+// Function to diagnose suppliers table schema
+export const testSupplierColumns = async () => {
+  console.log('Testing supplier table columns...');
+  try {
+    // Try to get a single record to see what columns exist
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('*')
+      .limit(1);
+
+    if (error) {
+      console.error('Error accessing suppliers table:', error);
+      return { success: false, message: 'Cannot access suppliers table', error };
+    }
+
+    if (!data || data.length === 0) {
+      // If no records, try to insert a minimal one to check column names
+      const testSupplier = {
+        name: 'Test Supplier',
+        // Try different column name variations
+        contactPerson: 'Test Contact',
+        contactperson: 'Test Contact',
+        contact_person: 'Test Contact'
+      };
+
+      console.log('No suppliers found, trying to create test supplier:', testSupplier);
+      
+      const { data: insertData, error: insertError } = await supabase
+        .from('suppliers')
+        .insert([testSupplier])
+        .select();
+
+      if (insertError) {
+        console.error('Error creating test supplier:', insertError);
+        return { 
+          success: false, 
+          message: 'Failed to create test supplier', 
+          error: insertError,
+          attemptedColumns: Object.keys(testSupplier)
+        };
+      }
+
+      console.log('Successfully created test supplier, columns accepted:', insertData);
+      return {
+        success: true,
+        message: 'Successfully created test supplier',
+        data: insertData
+      };
+    }
+
+    // If we have data, analyze what columns are available
+    console.log('Found supplier record, available columns:', Object.keys(data[0]));
+    
+    return {
+      success: true,
+      message: 'Found existing supplier record',
+      availableColumns: Object.keys(data[0]),
+      sampleData: data[0]
+    };
+  } catch (err) {
+    console.error('Unexpected error testing supplier columns:', err);
+    return { success: false, message: 'Supplier column test failed', error: err };
+  }
+};
+
 export const validateSchema = async () => {
   try {
     const { data: error } = await supabase
@@ -98,7 +163,8 @@ export const validateSchema = async () => {
 
 export const runMigrations = async () => {
   try {
-    const updateQuery = `
+    // First, add the camelCase updatedAt column if it doesn't exist
+    const updateCamelCaseQuery = `
       DO $$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
@@ -109,17 +175,37 @@ export const runMigrations = async () => {
       $$;
     `;
     
-    const { error } = await supabase.rpc('pg_query', { query: updateQuery });
+    const { error: camelCaseError } = await supabase.rpc('pg_query', { query: updateCamelCaseQuery });
     
-    if (error) {
-      return { success: false, message: 'Failed to run migration', error };
+    if (camelCaseError) {
+      return { success: false, message: 'Failed to add updatedAt column', error: camelCaseError };
     }
     
+    // Now add snake_case updated_at column for compatibility
+    const updateSnakeCaseQuery = `
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name = 'clients' AND column_name = 'updated_at') THEN
+          ALTER TABLE clients ADD COLUMN updated_at timestamp DEFAULT now();
+        END IF;
+      END
+      $$;
+    `;
+    
+    const { error: snakeCaseError } = await supabase.rpc('pg_query', { query: updateSnakeCaseQuery });
+    
+    if (snakeCaseError) {
+      return { success: false, message: 'Failed to add updated_at column', error: snakeCaseError };
+    }
+    
+    // Create a trigger that updates both forms of the timestamp
     const triggerQuery = `
       CREATE OR REPLACE FUNCTION update_modified_column()
       RETURNS TRIGGER AS $$
       BEGIN
-        NEW."updatedAt" = now(); 
+        NEW."updatedAt" = now();
+        NEW.updated_at = now();
         RETURN NEW;
       END;
       $$ language 'plpgsql';
@@ -148,3 +234,10 @@ export const runMigrations = async () => {
     return { success: false, message: 'Migration execution failed', error: err };
   }
 };
+
+// Migration disabled due to RPC errors
+// runMigrations().then(result => {
+//   console.log('Migration result:', result);
+// }).catch(err => {
+//   console.error('Migration error:', err);
+// });
