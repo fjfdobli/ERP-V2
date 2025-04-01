@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, CSSProperties } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { login, clearError } from '../redux/slices/authSlice';
@@ -37,17 +37,80 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     setShowPassword(!showPassword);
   };
 
+  const bgSvgCode = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
+      <defs>
+        <pattern id="subtlePattern" patternUnits="userSpaceOnUse" width="100" height="100">
+          <rect width="100" height="100" fill="#f8f9fa"/>
+          <rect width="100" height="100" fill="#f0f2f5" opacity="0.4"/>
+          <path d="M0 50 L100 50 M50 0 L50 100" stroke="#e9ecef" stroke-width="0.5" opacity="0.5"/>
+        </pattern>
+      </defs>
+      <rect width="1200" height="800" fill="url(#subtlePattern)"/>
+      
+      <g opacity="0.65" transform="translate(120,150)">
+        <rect x="0" y="0" width="60" height="45" rx="4" fill="#e0e0e0" stroke="#cccccc" stroke-width="1"/>
+        <rect x="5" y="5" width="50" height="20" rx="2" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="0.5"/>
+        <rect x="15" y="30" width="30" height="5" rx="1" fill="#e0e0e0"/>
+      </g>
+      
+      <g opacity="0.65" transform="translate(50,50)">
+        <path d="M0,0 L40,0 L55,15 L55,70 L0,70 Z" fill="#f0f0f0" stroke="#dddddd" stroke-width="1"/>
+        <path d="M40,0 L40,15 L55,15" fill="none" stroke="#dddddd" stroke-width="1"/>
+        <line x1="10" y1="25" x2="45" y2="25" stroke="#e0e0e0" stroke-width="1"/>
+        <line x1="10" y1="32" x2="45" y2="32" stroke="#e0e0e0" stroke-width="1"/>
+        <line x1="10" y1="39" x2="45" y2="39" stroke="#e0e0e0" stroke-width="1"/>
+      </g>
+      
+      <g opacity="0.65" transform="translate(70,420)">
+        <rect x="0" y="0" width="50" height="60" rx="3" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="1"/>
+        <text x="25" y="25" font-family="Arial" font-size="24" font-weight="bold" text-anchor="middle" fill="#d0d0d0">A</text>
+        <text x="25" y="45" font-family="Arial" font-size="14" text-anchor="middle" fill="#d9d9d9">a</text>
+      </g>
+      
+      <g opacity="0.65" transform="translate(900,220)">
+        <circle cx="30" cy="30" r="28" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="1"/>
+        <circle cx="30" cy="30" r="22" fill="#f0f0f0" stroke="#e0e0e0" stroke-width="0.5"/>
+        <circle cx="30" cy="30" r="6" fill="#e0e0e0"/>
+      </g>
+      
+      <g opacity="0.65" transform="translate(1080,50)">
+        <rect x="0" y="0" width="60" height="60" rx="3" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="1"/>
+        <line x1="20" y1="0" x2="20" y2="60" stroke="#e0e0e0" stroke-width="1"/>
+        <line x1="40" y1="0" x2="40" y2="60" stroke="#e0e0e0" stroke-width="1"/>
+        <line x1="0" y1="20" x2="60" y2="20" stroke="#e0e0e0" stroke-width="1"/>
+        <line x1="0" y1="40" x2="60" y2="40" stroke="#e0e0e0" stroke-width="1"/>
+      </g>
+    </svg>
+  `;
+
+  const backgroundStyle: CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f8f9fa',
+    backgroundImage: `url("data:image/svg+xml;charset=utf8,${encodeURIComponent(bgSvgCode)}")`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    zIndex: -1,
+    opacity: 0.8
+  };
+
   return (
     <Box
       sx={{
         minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        padding: { xs: 2, md: 4 }
+        padding: { xs: 2, md: 4 },
+        position: 'relative'
       }}
     >
+      {/* Background div */}
+      <div style={backgroundStyle}></div>
+      
       <Container maxWidth="sm">
         <Paper 
           elevation={6} 
