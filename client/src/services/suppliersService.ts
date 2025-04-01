@@ -316,24 +316,38 @@ export const suppliersService = {
       const supplierData = prepareSupplierDataForDb(supplier);
       console.log('Prepared data for database update:', supplierData);
       
-      // Actually update the supplier in the database
+      // We'll use a direct approach with explicit fields to avoid timing issues
+      // Create a new object with only the fields we want to update
+      const updateData = {
+        name: supplierData.name,
+        contactperson: supplierData.contactperson,
+        email: supplierData.email || '',
+        phone: supplierData.phone || '',
+        status: supplierData.status,
+        address: supplierData.address || null,
+        notes: supplierData.notes || null
+      };
+      
+      console.log('Using explicit update object:', updateData);
+      
+      // Use direct UPDATE with select
       const { data, error } = await supabase
         .from('suppliers')
-        .update(supplierData)
+        .update(updateData)
         .eq('id', numericId)
-        .select()
-        .single();
+        .select();
       
       if (error) {
         console.error(`Error updating supplier with id ${numericId}:`, error);
         throw new Error(error.message);
       }
       
-      if (!data) {
+      if (!data || data.length === 0) {
         throw new Error(`Update failed for supplier with id ${numericId}`);
       }
       
-      return normalizeSupplierData(data);
+      // Return the updated supplier
+      return normalizeSupplierData(data[0]);
     } catch (error) {
       console.error('Unexpected error in updateSupplier:', error);
       throw error;
