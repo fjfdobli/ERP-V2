@@ -14,7 +14,6 @@ import DashboardHome from './pages/DashboardHome';
 import ClientsList from './pages/ClientsList';
 import OrderRequestsList from './pages/Orders/OrderRequestsList';
 import ClientOrdersList from './pages/Orders/ClientOrdersList';
-import SupplierOrdersList from './pages/Orders/SupplierOrdersList';
 import InventoryList from './pages/InventoryList';
 import EmployeesList from './pages/EmployeesList';
 import SuppliersList from './pages/SuppliersList';
@@ -85,7 +84,6 @@ const AppContent: React.FC = () => {
           <Route path="clients" element={<ClientsList />} />
           <Route path="orders/requests" element={<OrderRequestsList />} />
           <Route path="orders/clients" element={<ClientOrdersList />} />
-          <Route path="orders/suppliers" element={<SupplierOrdersList />} />
           <Route path="inventory" element={<InventoryList />} />
           <Route path="employees" element={<EmployeesList />} />
           <Route path="payroll" element={<Payroll />} />

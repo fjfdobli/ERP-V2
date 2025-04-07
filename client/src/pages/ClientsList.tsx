@@ -1,10 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Avatar, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, FormControl, InputLabel, Select, MenuItem, Snackbar, Alert, SelectChangeEvent, Divider, FormControlLabel, Checkbox, Tab, Tabs } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon, Business, Person, Payments, Info, Refresh as RefreshIcon } from '@mui/icons-material';
-import { clientsService, Client, InsertClient } from '../services/clientsService';
+import { Client, InsertClient } from '../services/clientsService';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { useDispatch, useSelector } from 'react-redux';
+import { 
+  fetchClients, 
+  searchClients, 
+  createClient, 
+  updateClient,
+  deleteClient,
+  selectAllClients,
+  selectClientsStatus,
+  selectClientsError 
+} from '../redux/slices/clientsSlice';
+import { AppDispatch } from '../redux/store';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -246,8 +258,12 @@ const ClientViewDetails: React.FC<ClientViewDetailsProps> = ({ open, client, onC
 };
 
 const ClientsList: React.FC = () => {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  // Use Redux state and dispatch
+  const dispatch = useDispatch<AppDispatch>();
+  const clients = useSelector(selectAllClients);
+  const status = useSelector(selectClientsStatus);
+  const error = useSelector(selectClientsError);
+  
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [openViewDialog, setOpenViewDialog] = useState<boolean>(false);
@@ -316,41 +332,29 @@ const ClientsList: React.FC = () => {
     setSnackbar({ open: true, message, severity });
   }, []);
 
-  const fetchClients = useCallback(async () => {
-    setLoading(true);
-    try {
-      console.log('Fetching clients...');
-      const data = await clientsService.getClients();
-      console.log('Fetched clients data:', data);
-      setClients(data);
-    } catch (error) {
-      console.error('Error fetching clients:', error);
-      showSnackbar('Failed to load clients', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showSnackbar]);
+  // Fetch clients on component mount
+  const fetchClientsList = useCallback(() => {
+    dispatch(fetchClients());
+  }, [dispatch]);
 
   useEffect(() => {
-    fetchClients();
-  }, [fetchClients]);
+    fetchClientsList();
+  }, [fetchClientsList]);
 
-  const handleSearch = async () => {
+  // Show error in snackbar if fetch fails
+  useEffect(() => {
+    if (status === 'failed' && error) {
+      showSnackbar(`Error: ${error}`, 'error');
+    }
+  }, [status, error, showSnackbar]);
+
+  const handleSearch = () => {
     if (!searchQuery.trim()) {
-      fetchClients();
+      dispatch(fetchClients());
       return;
     }
     
-    setLoading(true);
-    try {
-      const data = await clientsService.searchClients(searchQuery);
-      setClients(data);
-    } catch (error) {
-      console.error('Error searching clients:', error);
-      showSnackbar('Search failed', 'error');
-    } finally {
-      setLoading(false);
-    }
+    dispatch(searchClients(searchQuery));
   };
 
   const handleOpenViewDialog = (client: Client) => {
@@ -497,13 +501,28 @@ const ClientsList: React.FC = () => {
     }));
   };
 
+  const handleDelete = async (client: Client) => {
+    if (window.confirm(`Are you sure you want to delete ${client.name}?`)) {
+      try {
+        const clientId = typeof client.id === 'string' 
+          ? parseInt(client.id, 10) 
+          : client.id;
+          
+        await dispatch(deleteClient(clientId)).unwrap();
+        showSnackbar('Client deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting client:', error);
+        showSnackbar('Failed to delete client: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
+      }
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.name || !formData.contactPerson) {
       showSnackbar('Client name and contact person are required', 'error');
       return;
     }
 
-    setLoading(true);
     try {
       const formattedAddress = formData.address_line1 ? 
         [
@@ -533,7 +552,7 @@ const ClientsList: React.FC = () => {
         contactPerson: formData.contactPerson,
         email: formData.email || '',
         phone: formData.phone || '',
-        status: formData.status, // This should be either 'Active' or 'Inactive'
+        status: formData.status,
         address: formattedAddress,
         notes: formData.notes || '',
         businessType: formData.businessType || 'Company',
@@ -549,31 +568,22 @@ const ClientsList: React.FC = () => {
         specialRequirements: formData.specialRequirements || ''
       };
 
-      console.log('Submitting client data:', clientData);
-
-      let result;
       if (selectedClient && selectedClient.id) {
-        console.log('Updating client with ID:', selectedClient.id, 'Type:', typeof selectedClient.id);
         const clientId = typeof selectedClient.id === 'string' 
           ? parseInt(selectedClient.id, 10) 
           : selectedClient.id;
           
-        result = await clientsService.updateClient(clientId, clientData);
-        console.log('Updated client result:', result);
+        await dispatch(updateClient({ id: clientId, client: clientData })).unwrap();
         showSnackbar('Client updated successfully', 'success');
       } else {
-        result = await clientsService.createClient(clientData);
-        console.log('Created client result:', result);
+        await dispatch(createClient(clientData)).unwrap();
         showSnackbar('Client created successfully', 'success');
       }
       
-      await fetchClients();
       handleCloseDialog();
     } catch (error) {
       console.error('Error saving client:', error);
       showSnackbar('Failed to save client: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -597,6 +607,8 @@ const ClientsList: React.FC = () => {
     }
     return name.substring(0, 2).toUpperCase();
   };
+
+  const isLoading = status === 'loading';
 
   return (
     <Box>
@@ -634,13 +646,13 @@ const ClientsList: React.FC = () => {
           variant="outlined"
           color="primary"
           startIcon={<RefreshIcon />}
-          onClick={fetchClients}
+          onClick={fetchClientsList}
         >
           Refresh Data
         </Button>
       </Box>
 
-      {loading ? (
+      {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
           <CircularProgress />
         </Box>
@@ -702,8 +714,17 @@ const ClientsList: React.FC = () => {
                       <Button 
                         size="small"
                         onClick={() => handleOpenDialog(client)}
+                        sx={{ mr: 1 }}
                       >
                         Edit
+                      </Button>
+                      <Button 
+                        size="small"
+                        onClick={() => handleDelete(client)}
+                        color="error"
+                        sx={{ mr: 1 }}
+                      >
+                        Delete
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -820,320 +841,320 @@ const ClientsList: React.FC = () => {
                     value={formData.acquisition_date}
                     onChange={handleDateChange}
                     slotProps={{ textField: { fullWidth: true } }}
+                    />
+                  </LocalizationProvider>
+                </Grid>
+              </Grid>
+            </TabPanel>
+            
+            <TabPanel value={tabValue} index={1}>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Typography variant="h6" gutterBottom>
+                    Primary Contact
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    name="contactPerson"
+                    label="Contact Person Name"
+                    fullWidth
+                    required
+                    value={formData.contactPerson}
+                    onChange={handleInputChange}
+                    />
+                </Grid>
+                
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    name="email"
+                    label="Email Address"
+                    type="email"
+                    fullWidth
+                    value={formData.email}
+                    onChange={handleInputChange}
                   />
-                </LocalizationProvider>
-              </Grid>
-            </Grid>
-          </TabPanel>
-          
-          <TabPanel value={tabValue} index={1}>
-            <Grid container spacing={3}>
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom>
-                  Primary Contact
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <TextField
-                  name="contactPerson"
-                  label="Contact Person Name"
-                  fullWidth
-                  required
-                  value={formData.contactPerson}
-                  onChange={handleInputChange}
+                </Grid>
+                
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    name="phone"
+                    label="Phone Number"
+                    fullWidth
+                    value={formData.phone}
+                    onChange={handleInputChange}
                   />
+                </Grid>
+                
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    name="alternatePhone"
+                    label="Alternate Phone"
+                    fullWidth
+                    value={formData.alternatePhone}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="h6" gutterBottom>
+                    Address
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <TextField
+                    name="address_line1"
+                    label="Address"
+                    fullWidth
+                    value={formData.address_line1}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    name="city"
+                    label="City"
+                    fullWidth
+                    value={formData.city}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    name="state"
+                    label="State/Province"
+                    fullWidth
+                    value={formData.state}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <TextField
+                    name="postal_code"
+                    label="Postal Code"
+                    fullWidth
+                    value={formData.postal_code}
+                    onChange={handleInputChange}
+                  />
+                </Grid>
               </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <TextField
-                  name="email"
-                  label="Email Address"
-                  type="email"
-                  fullWidth
-                  value={formData.email}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <TextField
-                  name="phone"
-                  label="Phone Number"
-                  fullWidth
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} md={6}>
-                <TextField
-                  name="alternatePhone"
-                  label="Alternate Phone"
-                  fullWidth
-                  value={formData.alternatePhone}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12}>
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="h6" gutterBottom>
-                  Address
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12}>
-                <TextField
-                  name="address_line1"
-                  label="Address"
-                  fullWidth
-                  value={formData.address_line1}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} md={4}>
-                <TextField
-                  name="city"
-                  label="City"
-                  fullWidth
-                  value={formData.city}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} md={4}>
-                <TextField
-                  name="state"
-                  label="State/Province"
-                  fullWidth
-                  value={formData.state}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-              
-              <Grid item xs={12} md={4}>
-                <TextField
-                  name="postal_code"
-                  label="Postal Code"
-                  fullWidth
-                  value={formData.postal_code}
-                  onChange={handleInputChange}
-                />
-              </Grid>
-            </Grid>
-          </TabPanel>
-          
-          <TabPanel value={tabValue} index={2}>
-            <Grid container spacing={3}>
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom>
-                  Billing Information
-                </Typography>
-              </Grid>
-              
-              <Grid item xs={12}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={formData.billingAddressSame}
-                      onChange={handleCheckboxChange}
-                      name="billingAddressSame"
-                      color="primary"
-                    />
-                  }
-                  label="Billing address same as business address"
-                />
-              </Grid>
-              
-              {!formData.billingAddressSame && (
-                <>
-                  <Grid item xs={12}>
-                    <TextField
-                      name="billing_address_line1"
-                      label="Billing Address Line 1"
-                      fullWidth
-                      value={formData.billing_address_line1}
-                      onChange={handleInputChange}
-                    />
-                  </Grid>
-                  
-                  <Grid item xs={12}>
-                    <TextField
-                      name="billing_address_line2"
-                      label="Billing Address Line 2"
-                      fullWidth
-                      value={formData.billing_address_line2}
-                      onChange={handleInputChange}
-                    />
-                  </Grid>
-                  
-                  <Grid item xs={12} md={4}>
-                    <TextField
-                      name="billing_city"
-                      label="City"
-                      fullWidth
-                      value={formData.billing_city}
-                      onChange={handleInputChange}
-                    />
-                  </Grid>
-                  
-                  <Grid item xs={12} md={4}>
-                    <TextField
-                      name="billing_state"
-                      label="State/Province"
-                      fullWidth
-                      value={formData.billing_state}
-                      onChange={handleInputChange}
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} md={4}>
-                   <TextField
-                     name="billing_postal_code"
-                     label="Postal Code"
-                     fullWidth
-                     value={formData.billing_postal_code}
-                     onChange={handleInputChange}
-                   />
-                 </Grid>
-               </>
-             )}
-             
-             <Grid item xs={12}>
-               <Divider sx={{ my: 2 }} />
-               <Typography variant="h6" gutterBottom>
-                 Payment Details
-               </Typography>
+            </TabPanel>
+            
+            <TabPanel value={tabValue} index={2}>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Typography variant="h6" gutterBottom>
+                    Billing Information
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={formData.billingAddressSame}
+                        onChange={handleCheckboxChange}
+                        name="billingAddressSame"
+                        color="primary"
+                      />
+                    }
+                    label="Billing address same as business address"
+                  />
+                </Grid>
+                
+                {!formData.billingAddressSame && (
+                  <>
+                    <Grid item xs={12}>
+                      <TextField
+                        name="billing_address_line1"
+                        label="Billing Address Line 1"
+                        fullWidth
+                        value={formData.billing_address_line1}
+                        onChange={handleInputChange}
+                      />
+                    </Grid>
+                    
+                    <Grid item xs={12}>
+                      <TextField
+                        name="billing_address_line2"
+                        label="Billing Address Line 2"
+                        fullWidth
+                        value={formData.billing_address_line2}
+                        onChange={handleInputChange}
+                      />
+                    </Grid>
+                    
+                    <Grid item xs={12} md={4}>
+                      <TextField
+                        name="billing_city"
+                        label="City"
+                        fullWidth
+                        value={formData.billing_city}
+                        onChange={handleInputChange}
+                      />
+                    </Grid>
+                    
+                    <Grid item xs={12} md={4}>
+                      <TextField
+                        name="billing_state"
+                        label="State/Province"
+                        fullWidth
+                        value={formData.billing_state}
+                        onChange={handleInputChange}
+                      />
+                    </Grid>
+  
+                    <Grid item xs={12} md={4}>
+                     <TextField
+                       name="billing_postal_code"
+                       label="Postal Code"
+                       fullWidth
+                       value={formData.billing_postal_code}
+                       onChange={handleInputChange}
+                     />
+                   </Grid>
+                 </>
+               )}
+               
+               <Grid item xs={12}>
+                 <Divider sx={{ my: 2 }} />
+                 <Typography variant="h6" gutterBottom>
+                   Payment Details
+                 </Typography>
+               </Grid>
+               
+               <Grid item xs={12} md={6}>
+                 <FormControl fullWidth>
+                   <InputLabel id="payment-terms-label">Payment Terms</InputLabel>
+                   <Select
+                     labelId="payment-terms-label"
+                     name="paymentTerms"
+                     value={formData.paymentTerms}
+                     label="Payment Terms"
+                     onChange={handleSelectChange}
+                   >
+                     {paymentTerms.map((term) => (
+                       <MenuItem key={term} value={term}>{term}</MenuItem>
+                     ))}
+                   </Select>
+                 </FormControl>
+               </Grid>
+               
+               <Grid item xs={12} md={6}>
+                 <TextField
+                   name="creditLimit"
+                   label="Credit Limit (₱)"
+                   type="number"
+                   fullWidth
+                   value={formData.creditLimit}
+                   onChange={handleInputChange}
+                   InputProps={{
+                     startAdornment: <InputAdornment position="start">₱</InputAdornment>,
+                   }}
+                 />
+               </Grid>
+               
+               <Grid item xs={12}>
+                 <FormControlLabel
+                   control={
+                     <Checkbox
+                       checked={formData.taxExempt}
+                       onChange={handleCheckboxChange}
+                       name="taxExempt"
+                       color="primary"
+                     />
+                   }
+                   label="Tax Exempt"
+                 />
+               </Grid>
              </Grid>
-             
-             <Grid item xs={12} md={6}>
-               <FormControl fullWidth>
-                 <InputLabel id="payment-terms-label">Payment Terms</InputLabel>
-                 <Select
-                   labelId="payment-terms-label"
-                   name="paymentTerms"
-                   value={formData.paymentTerms}
-                   label="Payment Terms"
-                   onChange={handleSelectChange}
-                 >
-                   {paymentTerms.map((term) => (
-                     <MenuItem key={term} value={term}>{term}</MenuItem>
-                   ))}
-                 </Select>
-               </FormControl>
+           </TabPanel>
+           
+           <TabPanel value={tabValue} index={3}>
+             <Grid container spacing={3}>
+               <Grid item xs={12}>
+                 <Typography variant="h6" gutterBottom>
+                   Printing Preferences
+                 </Typography>
+               </Grid>
+               
+               <Grid item xs={12}>
+                 <TextField
+                   name="specialRequirements"
+                   label="Special Requirements or Preferences"
+                   multiline
+                   rows={4}
+                   fullWidth
+                   value={formData.specialRequirements}
+                   onChange={handleInputChange}
+                   placeholder="Enter any special requirements or preferences for printing jobs"
+                 />
+               </Grid>
+               
+               <Grid item xs={12}>
+                 <Divider sx={{ my: 2 }} />
+                 <Typography variant="h6" gutterBottom>
+                   Notes
+                 </Typography>
+               </Grid>
+               
+               <Grid item xs={12}>
+                 <TextField
+                   name="notes"
+                   label="General Notes"
+                   multiline
+                   rows={4}
+                   fullWidth
+                   value={formData.notes}
+                   onChange={handleInputChange}
+                   placeholder="Add any additional information about this client's specific needs, history, or other important details."
+                 />
+               </Grid>
              </Grid>
-             
-             <Grid item xs={12} md={6}>
-               <TextField
-                 name="creditLimit"
-                 label="Credit Limit (₱)"
-                 type="number"
-                 fullWidth
-                 value={formData.creditLimit}
-                 onChange={handleInputChange}
-                 InputProps={{
-                   startAdornment: <InputAdornment position="start">₱</InputAdornment>,
-                 }}
-               />
-             </Grid>
-             
-             <Grid item xs={12}>
-               <FormControlLabel
-                 control={
-                   <Checkbox
-                     checked={formData.taxExempt}
-                     onChange={handleCheckboxChange}
-                     name="taxExempt"
-                     color="primary"
-                   />
-                 }
-                 label="Tax Exempt"
-               />
-             </Grid>
-           </Grid>
-         </TabPanel>
-         
-         <TabPanel value={tabValue} index={3}>
-           <Grid container spacing={3}>
-             <Grid item xs={12}>
-               <Typography variant="h6" gutterBottom>
-                 Printing Preferences
-               </Typography>
-             </Grid>
-             
-             <Grid item xs={12}>
-               <TextField
-                 name="specialRequirements"
-                 label="Special Requirements or Preferences"
-                 multiline
-                 rows={4}
-                 fullWidth
-                 value={formData.specialRequirements}
-                 onChange={handleInputChange}
-                 placeholder="Enter any special requirements or preferences for printing jobs"
-               />
-             </Grid>
-             
-             <Grid item xs={12}>
-               <Divider sx={{ my: 2 }} />
-               <Typography variant="h6" gutterBottom>
-                 Notes
-               </Typography>
-             </Grid>
-             
-             <Grid item xs={12}>
-               <TextField
-                 name="notes"
-                 label="General Notes"
-                 multiline
-                 rows={4}
-                 fullWidth
-                 value={formData.notes}
-                 onChange={handleInputChange}
-                 placeholder="Add any additional information about this client's specific needs, history, or other important details."
-               />
-             </Grid>
-           </Grid>
-         </TabPanel>
-       </DialogContent>
-       <DialogActions>
-         <Button onClick={handleCloseDialog}>Cancel</Button>
-         <Button 
-           onClick={handleSubmit} 
-           variant="contained" 
-           color="primary"
-           disabled={loading}
-         >
-           {loading ? <CircularProgress size={24} /> : (selectedClient ? 'Save Client' : 'Add Client')}
-         </Button>
-       </DialogActions>
-     </Dialog>
-
-      {/* View Client Details Dialog */}
-      <ClientViewDetails 
-        open={openViewDialog}
-        client={selectedClient}
-        onClose={handleCloseViewDialog}
-      />
-
-     <Snackbar
-       open={snackbar.open}
-       autoHideDuration={6000}
-       onClose={handleCloseSnackbar}
-       anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-     >
-       <Alert 
-         onClose={handleCloseSnackbar} 
-         severity={snackbar.severity}
-         sx={{ width: '100%' }}
+           </TabPanel>
+         </DialogContent>
+         <DialogActions>
+           <Button onClick={handleCloseDialog}>Cancel</Button>
+           <Button 
+             onClick={handleSubmit} 
+             variant="contained" 
+             color="primary"
+             disabled={isLoading}
+           >
+             {isLoading ? <CircularProgress size={24} /> : (selectedClient ? 'Save Client' : 'Add Client')}
+           </Button>
+         </DialogActions>
+       </Dialog>
+  
+        {/* View Client Details Dialog */}
+        <ClientViewDetails 
+          open={openViewDialog}
+          client={selectedClient}
+          onClose={handleCloseViewDialog}
+        />
+  
+       <Snackbar
+         open={snackbar.open}
+         autoHideDuration={6000}
+         onClose={handleCloseSnackbar}
+         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
        >
-         {snackbar.message}
-       </Alert>
-     </Snackbar>
-   </Box>
- );
-};
-
-export default ClientsList;
+         <Alert 
+           onClose={handleCloseSnackbar} 
+           severity={snackbar.severity}
+           sx={{ width: '100%' }}
+         >
+           {snackbar.message}
+         </Alert>
+       </Snackbar>
+     </Box>
+   );
+  };
+  
+  export default ClientsList;

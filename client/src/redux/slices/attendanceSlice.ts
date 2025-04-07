@@ -16,18 +16,15 @@ const initialState: AttendanceState = {
   error: null
 };
 
-// Async thunks that use direct Supabase services as fallback
 export const fetchAttendance = createAsyncThunk(
   'attendance/fetchAttendance',
   async (filters: AttendanceFilters | undefined = undefined, { rejectWithValue }) => {
     try {
-      // Try API first
       const response = await apiClient.get('/attendance', { params: filters });
       return response.data.data;
     } catch (error: any) {
       console.log('API error, falling back to direct service:', error);
       try {
-        // Fallback to direct service
         return await attendanceService.getAttendance(filters);
       } catch (serviceError: any) {
         return rejectWithValue(serviceError.message || 'Failed to fetch attendance records');

@@ -23,7 +23,6 @@ import { fetchPayrolls } from '../redux/slices/payrollSlice';
 import { fetchEmployees } from '../redux/slices/employeesSlice';
 import { fetchInventory } from '../redux/slices/inventorySlice';
 import { fetchClientOrders } from '../redux/slices/clientOrdersSlice';
-import { fetchSupplierOrders } from '../redux/slices/supplierOrdersSlice';
 import { fetchClients } from '../redux/slices/clientsSlice';
 import { fetchSuppliers } from '../redux/slices/suppliersSlice';
 import { fetchMachinery, fetchMachineryStats } from '../redux/slices/machinerySlice';
@@ -767,7 +766,6 @@ const ReportsList: React.FC = () => {
         dispatch(fetchMachinery({})),
         dispatch(fetchMachineryStats()),
         dispatch(fetchClientOrders()),
-        dispatch(fetchSupplierOrders()),
         dispatch(fetchInventory()),
         dispatch(fetchPayrolls({ startDate, endDate })),
         dispatch(fetchAttendance({ startDate, endDate }))

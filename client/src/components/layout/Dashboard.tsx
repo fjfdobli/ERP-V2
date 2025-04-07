@@ -14,8 +14,7 @@ const menuItems = [
     icon: <OrdersIcon />, 
     children: [
       { text: 'Client Orders', icon: <ClientRequestIcon />, path: '/orders/clients' },
-      { text: 'Order Requests', icon: <RequestIcon />, path: '/orders/requests' },
-      { text: 'Supplier Orders', icon: <SupplierRequestIcon />, path: '/orders/suppliers' }
+      { text: 'Order Requests', icon: <RequestIcon />, path: '/orders/requests' }
     ]
   },
   { text: 'Suppliers', icon: <SuppliersIcon />, path: '/suppliers' },
