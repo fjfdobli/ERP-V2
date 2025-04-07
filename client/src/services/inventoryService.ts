@@ -2,305 +2,264 @@ import { supabase } from '../supabaseClient';
 
 export interface InventoryItem {
   id: number;
-  item_name: string;
+  itemName: string;
   sku: string;
-  type: string;
+  itemType: string;
   quantity: number;
-  min_stock: number;
-  unit_price: number;
-  supplier_id?: number;
-  description?: string;
-  location?: string;
-  created_at: string;
-  updated_at?: string;
+  minStockLevel: number;
+  unitPrice: number | null;
+  supplierId: number | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
+export interface CreateInventoryItem {
+  itemName: string;
+  sku: string;
+  itemType: string;
+  quantity: number;
+  minStockLevel: number;
+  unitPrice?: number;
+  supplierId?: number;
+}
+
+export interface UpdateInventoryItem {
+  itemName?: string;
+  sku?: string;
+  itemType?: string;
+  quantity?: number;
+  minStockLevel?: number;
+  unitPrice?: number;
+  supplierId?: number;
+}
+
+// Define interface for inventory transactions
 export interface InventoryTransaction {
-  id?: number;
-  inventory_id: number;
-  transaction_type: string; // 'stock_in', 'stock_out', 'adjustment', 'order'
+  id: number;
+  inventoryId: number;
+  transactionType: 'stock_in' | 'stock_out';
   quantity: number;
-  order_id?: string;
-  order_request_id?: number;
-  created_by: string;
+  createdBy: number;
+  isSupplier: boolean;
   notes?: string;
-  created_at?: string;
+  transactionDate: string;
 }
 
-export type InsertInventoryItem = Omit<InventoryItem, 'id' | 'created_at' | 'updated_at'>;
-export type UpdateInventoryItem = Partial<InsertInventoryItem>;
-export type InsertInventoryTransaction = Omit<InventoryTransaction, 'id' | 'created_at'>;
+export interface CreateInventoryTransaction {
+  inventoryId: number;
+  transactionType: 'stock_in' | 'stock_out';
+  quantity: number;
+  createdBy: number;
+  isSupplier: boolean;
+  notes?: string;
+}
 
+// Table names
+const INVENTORY_TABLE = 'inventory';
+const TRANSACTIONS_TABLE = 'inventory_transactions';
+
+/**
+ * Service for managing inventory data in Supabase
+ */
 export const inventoryService = {
-  async getInventoryItems() {
-    try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching inventory items:', error);
-        throw error;
-      }
-      
-      return data || [];
-    } catch (error) {
-      console.error('Unexpected error in getInventoryItems:', error);
-      throw error;
+  /**
+   * Fetch all inventory items
+   */
+  async getInventoryItems(): Promise<InventoryItem[]> {
+    const { data, error } = await supabase
+      .from(INVENTORY_TABLE)
+      .select('*')
+      .order('itemName', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching inventory items:', error);
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  },
+
+  /**
+   * Fetch a specific inventory item by ID
+   */
+  async getInventoryItemById(id: number): Promise<InventoryItem | null> {
+    const { data, error } = await supabase
+      .from(INVENTORY_TABLE)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      console.error(`Error fetching inventory item with ID ${id}:`, error);
+      throw new Error(error.message);
+    }
+
+    return data;
+  },
+
+  /**
+   * Search inventory items
+   */
+  async searchInventory(query: string): Promise<InventoryItem[]> {
+    const searchTerm = `%${query}%`;
+    
+    const { data, error } = await supabase
+      .from(INVENTORY_TABLE)
+      .select('*')
+      .or(`itemName.ilike.${searchTerm},sku.ilike.${searchTerm},itemType.ilike.${searchTerm}`)
+      .order('itemName', { ascending: true });
+
+    if (error) {
+      console.error('Error searching inventory:', error);
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  },
+
+  /**
+   * Get low stock inventory items (quantity < minStockLevel)
+   */
+  async getLowStockItems(): Promise<InventoryItem[]> {
+    const { data, error } = await supabase
+      .from(INVENTORY_TABLE)
+      .select('*')
+      .lt('quantity', 'minStockLevel')
+      .order('itemName', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching low stock items:', error);
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  },
+
+  /**
+   * Create a new inventory item
+   */
+  async createInventoryItem(item: CreateInventoryItem): Promise<InventoryItem> {
+    const { data, error } = await supabase
+      .from(INVENTORY_TABLE)
+      .insert([item])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating inventory item:', error);
+      throw new Error(error.message);
+    }
+
+    return data;
+  },
+
+  /**
+   * Update an existing inventory item
+   */
+  async updateInventoryItem(id: number, updates: UpdateInventoryItem): Promise<InventoryItem> {
+    const { data, error } = await supabase
+      .from(INVENTORY_TABLE)
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`Error updating inventory item with ID ${id}:`, error);
+      throw new Error(error.message);
+    }
+
+    return data;
+  },
+
+  /**
+   * Delete an inventory item
+   */
+  async deleteInventoryItem(id: number): Promise<void> {
+    const { error } = await supabase
+      .from(INVENTORY_TABLE)
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error(`Error deleting inventory item with ID ${id}:`, error);
+      throw new Error(error.message);
     }
   },
-  
-  async getInventoryItemById(id: number) {
-    try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('*')
-        .eq('id', id)
-        .single();
-      
-      if (error) {
-        console.error(`Error fetching inventory item with ID ${id}:`, error);
-        throw error;
-      }
-      
-      return data;
-    } catch (error) {
-      console.error(`Unexpected error in getInventoryItemById:`, error);
-      throw error;
+
+  /**
+   * Get transactions for a specific inventory item
+   */
+  async getItemTransactions(itemId: number): Promise<InventoryTransaction[]> {
+    const { data, error } = await supabase
+      .from(TRANSACTIONS_TABLE)
+      .select('*')
+      .eq('inventoryId', itemId)
+      .order('transactionDate', { ascending: false });
+
+    if (error) {
+      console.error(`Error fetching transactions for inventory item ${itemId}:`, error);
+      throw new Error(error.message);
     }
+
+    return data || [];
   },
-  
-  async getInventoryItemByName(name: string) {
-    try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('*')
-        .ilike('item_name', name)
-        .single();
-      
-      if (error) {
-        console.error(`Error fetching inventory item with name ${name}:`, error);
-        throw error;
-      }
-      
-      return data;
-    } catch (error) {
-      console.error(`Unexpected error in getInventoryItemByName:`, error);
-      throw error;
+
+  /**
+   * Add a new inventory transaction
+   */
+  async addTransaction(transaction: CreateInventoryTransaction): Promise<InventoryTransaction> {
+    const { data, error } = await supabase
+      .from(TRANSACTIONS_TABLE)
+      .insert([transaction])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding inventory transaction:', error);
+      throw new Error(error.message);
     }
+
+    return data;
   },
-  
-  async createInventoryItem(item: InsertInventoryItem) {
-    try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .insert([item])
-        .select();
-      
-      if (error) {
-        console.error('Error creating inventory item:', error);
-        throw error;
-      }
-      
-      return data?.[0];
-    } catch (error) {
-      console.error('Unexpected error in createInventoryItem:', error);
-      throw error;
+
+  /**
+   * Get active suppliers for stock-in transactions
+   */
+  async getActiveSuppliers(): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('id, name')
+      .eq('status', 'Active')
+      .order('name');
+
+    if (error) {
+      console.error('Error fetching active suppliers:', error);
+      throw new Error(error.message);
     }
+
+    return data || [];
   },
-  
-  async updateInventoryItem(id: number, updates: UpdateInventoryItem) {
-    try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .update(updates)
-        .eq('id', id)
-        .select();
-      
-      if (error) {
-        console.error(`Error updating inventory item with ID ${id}:`, error);
-        throw error;
-      }
-      
-      return data?.[0];
-    } catch (error) {
-      console.error('Unexpected error in updateInventoryItem:', error);
-      throw error;
+
+  /**
+   * Get active employees for stock-out transactions
+   */
+  async getActiveEmployees(): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('employees')
+      .select('id, firstName, lastName')
+      .eq('status', 'Active')
+      .order('lastName');
+
+    if (error) {
+      console.error('Error fetching active employees:', error);
+      throw new Error(error.message);
     }
-  },
-  
-  async addInventoryTransaction(transaction: InsertInventoryTransaction) {
-    try {
-      // First, get the current item to verify the quantity
-      const { data: item, error: itemError } = await supabase
-        .from('inventory')
-        .select('quantity')
-        .eq('id', transaction.inventory_id)
-        .single();
-      
-      if (itemError) {
-        console.error(`Error fetching inventory item with ID ${transaction.inventory_id}:`, itemError);
-        throw itemError;
-      }
-      
-      // Calculate new quantity based on transaction type
-      let newQuantity = item.quantity;
-      if (transaction.transaction_type === 'stock_in') {
-        newQuantity += transaction.quantity;
-      } else if (transaction.transaction_type === 'stock_out' || transaction.transaction_type === 'order') {
-        newQuantity = Math.max(0, newQuantity - transaction.quantity);
-      }
-      
-      // Add transaction record
-      const { data: transactionData, error: transactionError } = await supabase
-        .from('inventory_transactions')
-        .insert([{
-          inventory_id: transaction.inventory_id,
-          transaction_type: transaction.transaction_type,
-          quantity: transaction.quantity,
-          order_id: transaction.order_id,
-          order_request_id: transaction.order_request_id,
-          created_by: transaction.created_by,
-          notes: transaction.notes
-        }])
-        .select();
-      
-      if (transactionError) {
-        console.error('Error adding inventory transaction:', transactionError);
-        throw transactionError;
-      }
-      
-      // Update inventory quantity
-      const { data: updatedItem, error: updateError } = await supabase
-        .from('inventory')
-        .update({ quantity: newQuantity })
-        .eq('id', transaction.inventory_id)
-        .select();
-      
-      if (updateError) {
-        console.error(`Error updating inventory quantity for item ID ${transaction.inventory_id}:`, updateError);
-        throw updateError;
-      }
-      
-      return {
-        transaction: transactionData?.[0],
-        newQuantity,
-        item: updatedItem?.[0]
-      };
-    } catch (error) {
-      console.error('Unexpected error in addInventoryTransaction:', error);
-      throw error;
-    }
-  },
-  
-  async getLowStockItems() {
-    try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('*')
-        .lt('quantity', 'min_stock');
-      
-      if (error) {
-        console.error('Error fetching low stock items:', error);
-        throw error;
-      }
-      
-      return data || [];
-    } catch (error) {
-      console.error('Unexpected error in getLowStockItems:', error);
-      throw error;
-    }
-  },
-  
-  async processOrderItems(orderRequestId: number, orderId: string, items: any[], createdBy: string = 'system') {
-    try {
-      // Process each item in the order
-      const results = [];
-      
-      for (const item of items) {
-        // Find corresponding inventory item
-        const { data: inventoryItems, error: searchError } = await supabase
-          .from('inventory')
-          .select('*')
-          .ilike('item_name', `%${item.product_name}%`)
-          .limit(1);
-        
-        if (searchError) {
-          console.error(`Error searching for inventory item ${item.product_name}:`, searchError);
-          continue; // Skip this item but process others
-        }
-        
-        if (!inventoryItems || inventoryItems.length === 0) {
-          console.warn(`No matching inventory item found for ${item.product_name}`);
-          continue; // Skip this item but process others
-        }
-        
-        const inventoryItem = inventoryItems[0];
-        
-        // Create transaction to deduct from inventory
-        try {
-          const result = await this.addInventoryTransaction({
-            inventory_id: inventoryItem.id,
-            transaction_type: 'order',
-            quantity: item.quantity,
-            order_id: orderId,
-            order_request_id: orderRequestId,
-            created_by: createdBy,
-            notes: `Deducted for order ${orderId}`
-          });
-          
-          results.push(result);
-        } catch (transactionError) {
-          console.error(`Error processing inventory for ${item.product_name}:`, transactionError);
-          // Continue with other items
-        }
-      }
-      
-      return results;
-    } catch (error) {
-      console.error('Unexpected error in processOrderItems:', error);
-      throw error;
-    }
-  },
-  
-  async getInventoryTransactions(inventoryId: number) {
-    try {
-      const { data, error } = await supabase
-        .from('inventory_transactions')
-        .select('*')
-        .eq('inventory_id', inventoryId)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error(`Error fetching transactions for inventory ID ${inventoryId}:`, error);
-        return [];
-      }
-      
-      return data || [];
-    } catch (error) {
-      console.error('Unexpected error in getInventoryTransactions:', error);
-      return [];
-    }
-  },
-  
-  async searchInventory(query: string) {
-    try {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('*')
-        .or(`item_name.ilike.%${query}%,sku.ilike.%${query}%,type.ilike.%${query}%`)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error searching inventory:', error);
-        throw error;
-      }
-      
-      return data || [];
-    } catch (error) {
-      console.error('Unexpected error in searchInventory:', error);
-      throw error;
-    }
+
+    // Format employee names
+    return (data || []).map(emp => ({
+      id: emp.id,
+      name: `${emp.firstName} ${emp.lastName}`
+    }));
   }
-}
+};

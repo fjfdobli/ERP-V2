@@ -1,81 +1,76 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import apiClient from './apiClient';
-import { inventoryService } from '../../services/inventoryService';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { 
+  inventoryService, 
+  InventoryItem, 
+  UpdateInventoryItem, 
+  CreateInventoryItem, 
+  InventoryTransaction, 
+  CreateInventoryTransaction 
+} from '../../services/inventoryService';
+import { RootState } from '../store';
 
-interface InventoryItem {
-  id: string;
-  itemName: string;
-  itemType: string;
-  sku?: string;
-  quantity: number;
-  unitPrice: number;
-  minStockLevel: number;
-  supplierId?: string;
-  supplier?: {
-    name: string;
-  };
-  createdAt?: string;
-  updatedAt?: string;
+interface Supplier {
+  id: number;
+  name: string;
 }
 
-interface InventoryTransaction {
-  id: string;
-  inventoryId: string;
-  transactionType: string;
-  quantity: number;
-  orderId?: string;
-  createdBy: string;
-  createdAt: string;
+interface Employee {
+  id: number;
+  name: string;
 }
 
+// Define the state interface
 interface InventoryState {
   inventoryItems: InventoryItem[];
-  lowStockItems: InventoryItem[];
-  currentItem: InventoryItem | null;
+  selectedItem: InventoryItem | null;
   transactions: InventoryTransaction[];
+  activeSuppliers: Supplier[];
+  activeEmployees: Employee[];
   isLoading: boolean;
   error: string | null;
 }
 
+// Initial state
 const initialState: InventoryState = {
   inventoryItems: [],
-  lowStockItems: [],
-  currentItem: null,
+  selectedItem: null,
   transactions: [],
+  activeSuppliers: [],
+  activeEmployees: [],
   isLoading: false,
   error: null
 };
 
-// Map service items to the format expected by the application
-const mapServiceItemToInventoryItem = (item: any): InventoryItem => {
-  return {
-    id: item.id?.toString() || '',
-    itemName: item.item_name || '',
-    itemType: item.type || '',
-    sku: item.sku || '',
-    quantity: item.quantity || 0,
-    unitPrice: 0, // Default as the service doesn't have this
-    minStockLevel: item.min_stock || 0,
-    createdAt: item.created_at
-  };
-};
-
+// Async thunks
 export const fetchInventory = createAsyncThunk(
   'inventory/fetchInventory',
   async (_, { rejectWithValue }) => {
     try {
-      try {
-        // First try the API
-        const response = await apiClient.get('/inventory');
-        return response.data.data;
-      } catch (apiError) {
-        // On API failure, use the inventory service with mock data
-        console.log('API fetch failed, using inventory service');
-        const items = await inventoryService.getInventoryItems();
-        return items.map(mapServiceItemToInventoryItem);
-      }
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to fetch inventory');
+      return await inventoryService.getInventoryItems();
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch inventory');
+    }
+  }
+);
+
+export const fetchInventoryItemById = createAsyncThunk(
+  'inventory/fetchInventoryItemById',
+  async (id: number, { rejectWithValue }) => {
+    try {
+      return await inventoryService.getInventoryItemById(id);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch inventory item');
+    }
+  }
+);
+
+export const searchInventory = createAsyncThunk(
+  'inventory/searchInventory',
+  async (query: string, { rejectWithValue }) => {
+    try {
+      return await inventoryService.searchInventory(query);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to search inventory');
     }
   }
 );
@@ -84,191 +79,289 @@ export const fetchLowStockItems = createAsyncThunk(
   'inventory/fetchLowStockItems',
   async (_, { rejectWithValue }) => {
     try {
-      try {
-        // First try the API
-        const response = await apiClient.get('/inventory/low-stock');
-        return response.data.data;
-      } catch (apiError) {
-        // On API failure, use the inventory service with mock data
-        console.log('API fetch failed, using inventory service for low stock');
-        const items = await inventoryService.getLowStockItems();
-        return items.map(mapServiceItemToInventoryItem);
-      }
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to fetch low stock items');
-    }
-  }
-);
-
-export const fetchInventoryItemById = createAsyncThunk(
-  'inventory/fetchInventoryItemById',
-  async (id: string, { rejectWithValue }) => {
-    try {
-      try {
-        const response = await apiClient.get(`/inventory/${id}`);
-        return response.data.data;
-      } catch (apiError) {
-        // On API failure, use the inventory service with mock data
-        const item = await inventoryService.getInventoryItemById(parseInt(id));
-        return mapServiceItemToInventoryItem(item);
-      }
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to fetch inventory item');
+      return await inventoryService.getLowStockItems();
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch low stock items');
     }
   }
 );
 
 export const createInventoryItem = createAsyncThunk(
   'inventory/createInventoryItem',
-  async (itemData: Partial<InventoryItem>, { rejectWithValue }) => {
+  async (item: CreateInventoryItem, { rejectWithValue }) => {
     try {
-      const response = await apiClient.post('/inventory', itemData);
-      return response.data.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to create inventory item');
+      return await inventoryService.createInventoryItem(item);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to create inventory item');
     }
   }
 );
 
 export const updateInventoryItem = createAsyncThunk(
   'inventory/updateInventoryItem',
-  async ({ id, data }: { id: string; data: Partial<InventoryItem> }, { rejectWithValue }) => {
+  async ({ id, data }: { id: number; data: UpdateInventoryItem }, { rejectWithValue }) => {
     try {
-      const response = await apiClient.put(`/inventory/${id}`, data);
-      return response.data.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to update inventory item');
+      return await inventoryService.updateInventoryItem(id, data);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to update inventory item');
+    }
+  }
+);
+
+export const deleteInventoryItem = createAsyncThunk(
+  'inventory/deleteInventoryItem',
+  async (id: number, { rejectWithValue }) => {
+    try {
+      await inventoryService.deleteInventoryItem(id);
+      return id;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete inventory item');
+    }
+  }
+);
+
+export const fetchItemTransactions = createAsyncThunk(
+  'inventory/fetchItemTransactions',
+  async (itemId: number, { rejectWithValue }) => {
+    try {
+      return await inventoryService.getItemTransactions(itemId);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch item transactions');
     }
   }
 );
 
 export const addInventoryTransaction = createAsyncThunk(
   'inventory/addInventoryTransaction',
-  async ({ 
-    inventoryId, 
-    transactionData 
-  }: { 
-    inventoryId: string; 
-    transactionData: Partial<InventoryTransaction>
+  async ({ inventoryId, transactionData }: { 
+    inventoryId: number; 
+    transactionData: Omit<CreateInventoryTransaction, 'inventoryId'> 
   }, { rejectWithValue }) => {
     try {
-      const response = await apiClient.post(`/inventory/${inventoryId}/transactions`, transactionData);
-      return response.data.data;
-    } catch (error: any) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to add inventory transaction');
+      const transaction: CreateInventoryTransaction = {
+        ...transactionData,
+        inventoryId
+      };
+      return await inventoryService.addTransaction(transaction);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to add inventory transaction');
     }
   }
 );
 
+export const fetchActiveSuppliers = createAsyncThunk(
+  'inventory/fetchActiveSuppliers',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await inventoryService.getActiveSuppliers();
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch active suppliers');
+    }
+  }
+);
+
+export const fetchActiveEmployees = createAsyncThunk(
+  'inventory/fetchActiveEmployees',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await inventoryService.getActiveEmployees();
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch active employees');
+    }
+  }
+);
+
+// Create the slice
 const inventorySlice = createSlice({
   name: 'inventory',
   initialState,
   reducers: {
-    clearCurrentItem: (state) => {
-      state.currentItem = null;
+    setSelectedItem: (state, action: PayloadAction<InventoryItem | null>) => {
+      state.selectedItem = action.payload;
     },
     clearError: (state) => {
       state.error = null;
-    }
+    },
   },
   extraReducers: (builder) => {
     builder
+      // Fetch all inventory items
       .addCase(fetchInventory.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchInventory.fulfilled, (state, action) => {
         state.isLoading = false;
         state.inventoryItems = action.payload;
+        state.error = null;
       })
       .addCase(fetchInventory.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
-        state.inventoryItems = []; // Empty data on error
       })
       
-      .addCase(fetchLowStockItems.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(fetchLowStockItems.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.lowStockItems = action.payload;
-      })
-      .addCase(fetchLowStockItems.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
-        state.lowStockItems = []; // Empty data on error
-      })
-      
+      // Fetch inventory item by ID
       .addCase(fetchInventoryItemById.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchInventoryItemById.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.currentItem = action.payload;
+        state.selectedItem = action.payload;
+        state.error = null;
       })
       .addCase(fetchInventoryItemById.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
       
+      // Search inventory
+      .addCase(searchInventory.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(searchInventory.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.inventoryItems = action.payload;
+        state.error = null;
+      })
+      .addCase(searchInventory.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      
+      // Fetch low stock items
+      .addCase(fetchLowStockItems.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchLowStockItems.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.inventoryItems = action.payload;
+        state.error = null;
+      })
+      .addCase(fetchLowStockItems.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      
+      // Create inventory item
       .addCase(createInventoryItem.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(createInventoryItem.fulfilled, (state, action) => {
         state.isLoading = false;
         state.inventoryItems.push(action.payload);
+        state.error = null;
       })
       .addCase(createInventoryItem.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
       
+      // Update inventory item
       .addCase(updateInventoryItem.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(updateInventoryItem.fulfilled, (state, action) => {
         state.isLoading = false;
-        const index = state.inventoryItems.findIndex(item => item.id === action.payload.id);
+        const updatedItem = action.payload;
+        const index = state.inventoryItems.findIndex(item => item.id === updatedItem.id);
         if (index !== -1) {
-          state.inventoryItems[index] = action.payload;
+          state.inventoryItems[index] = updatedItem;
         }
-        state.currentItem = action.payload;
+        if (state.selectedItem?.id === updatedItem.id) {
+          state.selectedItem = updatedItem;
+        }
+        state.error = null;
       })
       .addCase(updateInventoryItem.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
       
+      // Delete inventory item
+      .addCase(deleteInventoryItem.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(deleteInventoryItem.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.inventoryItems = state.inventoryItems.filter(item => item.id !== action.payload);
+        if (state.selectedItem?.id === action.payload) {
+          state.selectedItem = null;
+        }
+        state.error = null;
+      })
+      .addCase(deleteInventoryItem.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      
+      // Fetch item transactions
+      .addCase(fetchItemTransactions.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchItemTransactions.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.transactions = action.payload;
+        state.error = null;
+      })
+      .addCase(fetchItemTransactions.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      
+      // Add inventory transaction
       .addCase(addInventoryTransaction.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(addInventoryTransaction.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.transactions.push(action.payload.transaction);
-        
-        if (state.currentItem && state.currentItem.id === action.payload.transaction.inventoryId) {
-          state.currentItem.quantity = action.payload.newQuantity;
-        }
-        
-        const index = state.inventoryItems.findIndex(item => 
-          item.id === action.payload.transaction.inventoryId
-        );
-        if (index !== -1) {
-          state.inventoryItems[index].quantity = action.payload.newQuantity;
-        }
+        state.transactions.unshift(action.payload);
+        state.error = null;
       })
       .addCase(addInventoryTransaction.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+      })
+      
+      // Fetch active suppliers
+      .addCase(fetchActiveSuppliers.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchActiveSuppliers.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.activeSuppliers = action.payload;
+        state.error = null;
+      })
+      .addCase(fetchActiveSuppliers.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      
+      // Fetch active employees
+      .addCase(fetchActiveEmployees.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchActiveEmployees.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.activeEmployees = action.payload;
+        state.error = null;
+      })
+      .addCase(fetchActiveEmployees.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
       });
-  }
+  },
 });
 
-export const { clearCurrentItem, clearError } = inventorySlice.actions;
+// Export actions and reducer
+export const { setSelectedItem, clearError } = inventorySlice.actions;
 export default inventorySlice.reducer;
+
+// Selectors
+export const selectAllInventoryItems = (state: RootState) => state.inventory.inventoryItems;
+export const selectInventoryItemById = (state: RootState, itemId: number) => 
+  state.inventory.inventoryItems.find(item => item.id === itemId);
+export const selectSelectedInventoryItem = (state: RootState) => state.inventory.selectedItem;
+export const selectInventoryTransactions = (state: RootState) => state.inventory.transactions;
+export const selectActiveSuppliers = (state: RootState) => state.inventory.activeSuppliers;
+export const selectActiveEmployees = (state: RootState) => state.inventory.activeEmployees;
+export const selectInventoryLoading = (state: RootState) => state.inventory.isLoading;
+export const selectInventoryError = (state: RootState) => state.inventory.error;

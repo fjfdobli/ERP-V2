@@ -1,10 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Avatar, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, FormControl, InputLabel, Select, MenuItem, Snackbar, Alert, SelectChangeEvent, Divider, FormControlLabel, Checkbox, Tab, Tabs } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon, Business, Person, Payments, Info, Refresh as RefreshIcon } from '@mui/icons-material';
-import { suppliersService, Supplier, InsertSupplier } from '../services/suppliersService';
+import { Supplier, InsertSupplier } from '../services/suppliersService';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { useDispatch, useSelector } from 'react-redux';
+import { 
+  fetchSuppliers, 
+  searchSuppliers, 
+  createSupplier, 
+  updateSupplier,
+  deleteSupplier,
+  selectAllSuppliers,
+  selectSuppliersStatus,
+  selectSuppliersError 
+} from '../redux/slices/suppliersSlice';
+import { AppDispatch } from '../redux/store';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -246,8 +258,12 @@ const SupplierViewDetails: React.FC<SupplierViewDetailsProps> = ({ open, supplie
 };
 
 const SuppliersList: React.FC = () => {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  // Use Redux state and dispatch
+  const dispatch = useDispatch<AppDispatch>();
+  const suppliers = useSelector(selectAllSuppliers);
+  const status = useSelector(selectSuppliersStatus);
+  const error = useSelector(selectSuppliersError);
+  
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [openViewDialog, setOpenViewDialog] = useState<boolean>(false);
@@ -318,41 +334,29 @@ const SuppliersList: React.FC = () => {
     setSnackbar({ open: true, message, severity });
   }, []);
 
-  const fetchSuppliers = useCallback(async () => {
-    setLoading(true);
-    try {
-      console.log('Fetching suppliers...');
-      const data = await suppliersService.getSuppliers();
-      console.log('Fetched suppliers data:', data);
-      setSuppliers(data);
-    } catch (error) {
-      console.error('Error fetching suppliers:', error);
-      showSnackbar('Failed to load suppliers', 'error');
-    } finally {
-      setLoading(false);
-    }
-  }, [showSnackbar]);
+  // Fetch suppliers on component mount
+  const fetchSuppliersList = useCallback(() => {
+    dispatch(fetchSuppliers());
+  }, [dispatch]);
 
   useEffect(() => {
-    fetchSuppliers();
-  }, [fetchSuppliers]);
+    fetchSuppliersList();
+  }, [fetchSuppliersList]);
 
-  const handleSearch = async () => {
+  // Show error in snackbar if fetch fails
+  useEffect(() => {
+    if (status === 'failed' && error) {
+      showSnackbar(`Error: ${error}`, 'error');
+    }
+  }, [status, error, showSnackbar]);
+
+  const handleSearch = () => {
     if (!searchQuery.trim()) {
-      fetchSuppliers();
+      dispatch(fetchSuppliers());
       return;
     }
     
-    setLoading(true);
-    try {
-      const data = await suppliersService.searchSuppliers(searchQuery);
-      setSuppliers(data);
-    } catch (error) {
-      console.error('Error searching suppliers:', error);
-      showSnackbar('Search failed', 'error');
-    } finally {
-      setLoading(false);
-    }
+    dispatch(searchSuppliers(searchQuery));
   };
 
   const handleOpenViewDialog = (supplier: Supplier) => {
@@ -363,6 +367,22 @@ const SuppliersList: React.FC = () => {
   const handleCloseViewDialog = () => {
     setOpenViewDialog(false);
     setSelectedSupplier(null);
+  };
+
+  const handleDelete = async (supplier: Supplier) => {
+    if (window.confirm(`Are you sure you want to delete ${supplier.name}?`)) {
+      try {
+        const supplierId = typeof supplier.id === 'string' 
+          ? parseInt(supplier.id, 10) 
+          : supplier.id;
+          
+        await dispatch(deleteSupplier(supplierId)).unwrap();
+        showSnackbar('Supplier deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting supplier:', error);
+        showSnackbar('Failed to delete supplier: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
+      }
+    }
   };
 
   const parseAddress = (address?: string | null) => {
@@ -380,8 +400,6 @@ const SuppliersList: React.FC = () => {
 
   const handleOpenDialog = (supplier?: Supplier) => {
     if (supplier) {
-      console.log('Opening edit dialog with supplier:', supplier);
-      
       const mainAddress = parseAddress(supplier.address);
       const billingAddress = supplier.billingAddressSame ? 
         mainAddress : parseAddress(supplier.billingAddress);
@@ -419,10 +437,6 @@ const SuppliersList: React.FC = () => {
         notes: supplier.notes || ''
       };
       
-      // Log the form data to help debug
-      console.log('Form data for edit:', updatedFormData);
-      
-      console.log('Setting form data for edit:', updatedFormData);
       setFormData(updatedFormData);
     } else {
       setSelectedSupplier(null);
@@ -470,26 +484,10 @@ const SuppliersList: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    console.log(`Input changed: ${name} = "${value}"`);
-    
-    // Log if this is one of our key fields
-    if (name === 'name' || name === 'contactPerson') {
-      console.log(`Updating ${name} field from "${formData[name as keyof typeof formData]}" to "${value}"`);
-    }
-    
-    setFormData(prev => {
-      const updated = {
-        ...prev,
-        [name]: value
-      };
-      
-      // For key fields, validate after update
-      if (name === 'name' || name === 'contactPerson') {
-        console.log(`After update, ${name} = "${updated[name as keyof typeof updated]}"`);
-      }
-      
-      return updated;
-    });
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   const handleSelectChange = (e: SelectChangeEvent) => {
@@ -536,19 +534,11 @@ const SuppliersList: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    // Log form data to help debug
-    console.log('Form data before submission:', formData);
-    console.log('Name value:', formData.name, 'Type:', typeof formData.name, 'Length:', formData.name ? formData.name.length : 0);
-    console.log('Contact Person value:', formData.contactPerson, 'Type:', typeof formData.contactPerson, 'Length:', formData.contactPerson ? formData.contactPerson.length : 0);
-    
-    // Check if required fields are empty, also log the exact condition result
+    // Apply default values to ensure they are never empty
     const nameEmpty = !formData.name || formData.name.trim() === '';
     const contactPersonEmpty = !formData.contactPerson || formData.contactPerson.trim() === '';
-    console.log('Name empty?', nameEmpty, 'Contact Person empty?', contactPersonEmpty);
     
-    // Apply default values to ensure they are never empty
     if (nameEmpty || contactPersonEmpty) {
-      console.log('Providing default values for empty fields');
       const updatedFormData = {...formData};
       
       if (nameEmpty) {
@@ -559,11 +549,9 @@ const SuppliersList: React.FC = () => {
         updatedFormData.contactPerson = 'Unknown Contact';
       }
       
-      console.log('Updated form data with defaults:', updatedFormData);
       setFormData(updatedFormData);
     }
 
-    setLoading(true);
     try {
       const formattedAddress = formData.address_line1 ? 
         [
@@ -609,31 +597,22 @@ const SuppliersList: React.FC = () => {
         taxExempt: Boolean(formData.taxExempt)
       };
 
-      console.log('Submitting supplier data:', supplierData);
-
-      let result;
       if (selectedSupplier && selectedSupplier.id) {
-        console.log('Updating supplier with ID:', selectedSupplier.id, 'Type:', typeof selectedSupplier.id);
         const supplierId = typeof selectedSupplier.id === 'string' 
           ? parseInt(selectedSupplier.id, 10) 
           : selectedSupplier.id;
           
-        result = await suppliersService.updateSupplier(supplierId, supplierData);
-        console.log('Updated supplier result:', result);
+        await dispatch(updateSupplier({ id: supplierId, supplier: supplierData })).unwrap();
         showSnackbar('Supplier updated successfully', 'success');
       } else {
-        result = await suppliersService.createSupplier(supplierData);
-        console.log('Created supplier result:', result);
+        await dispatch(createSupplier(supplierData)).unwrap();
         showSnackbar('Supplier created successfully', 'success');
       }
       
-      await fetchSuppliers();
       handleCloseDialog();
     } catch (error) {
       console.error('Error saving supplier:', error);
       showSnackbar('Failed to save supplier: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -657,6 +636,8 @@ const SuppliersList: React.FC = () => {
     }
     return name.substring(0, 2).toUpperCase();
   };
+
+  const isLoading = status === 'loading';
 
   return (
     <Box>
@@ -694,13 +675,13 @@ const SuppliersList: React.FC = () => {
           variant="outlined"
           color="primary"
           startIcon={<RefreshIcon />}
-          onClick={fetchSuppliers}
+          onClick={fetchSuppliersList}
         >
           Refresh Data
         </Button>
       </Box>
 
-      {loading ? (
+      {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
           <CircularProgress />
         </Box>
@@ -763,12 +744,18 @@ const SuppliersList: React.FC = () => {
                       </Button>
                       <Button 
                         size="small"
-                        onClick={() => {
-                          console.log('Edit button clicked for supplier:', supplier);
-                          handleOpenDialog(supplier);
-                        }}
+                        onClick={() => handleOpenDialog(supplier)}
+                        sx={{ mr: 1 }}
                       >
                         Edit
+                      </Button>
+                      <Button 
+                        size="small" 
+                        onClick={() => handleDelete(supplier)}
+                        color="error"
+                        sx={{ mr: 1 }}
+                      >
+                        Delete
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -815,8 +802,6 @@ const SuppliersList: React.FC = () => {
                   required
                   value={formData.name}
                   onChange={handleInputChange}
-                  onFocus={() => console.log("Name field focused, current value:", formData.name)}
-                  onBlur={() => console.log("Name field blurred, final value:", formData.name)}
                   error={!formData.name}
                   helperText={!formData.name ? "Name is required" : ""}
                 />
@@ -918,8 +903,6 @@ const SuppliersList: React.FC = () => {
                   required
                   value={formData.contactPerson}
                   onChange={handleInputChange}
-                  onFocus={() => console.log("Contact Person field focused, current value:", formData.contactPerson)}
-                  onBlur={() => console.log("Contact Person field blurred, final value:", formData.contactPerson)}
                   error={!formData.contactPerson}
                   helperText={!formData.contactPerson ? "Contact Person is required" : ""}
                   />
@@ -1174,9 +1157,9 @@ const SuppliersList: React.FC = () => {
            onClick={handleSubmit} 
            variant="contained" 
            color="primary"
-           disabled={loading}
+           disabled={isLoading}
          >
-           {loading ? <CircularProgress size={24} /> : (selectedSupplier ? 'Save Supplier' : 'Add Supplier')}
+           {isLoading ? <CircularProgress size={24} /> : (selectedSupplier ? 'Save Supplier' : 'Add Supplier')}
          </Button>
        </DialogActions>
      </Dialog>

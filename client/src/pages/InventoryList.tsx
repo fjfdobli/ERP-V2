@@ -1,29 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Chip, LinearProgress, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, SelectChangeEvent, Grid, Divider } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon } from '@mui/icons-material';
-import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { fetchInventory, updateInventoryItem, addInventoryTransaction, createInventoryItem } from '../redux/slices/inventorySlice';
-
-// Use your project's actual types
-interface InventoryItem {
-  id: string;
-  itemName: string;
-  sku?: string;
-  itemType: string;
-  quantity: number;
-  minStockLevel: number;
-}
-
-// Mock types for suppliers and employees
-interface SupplierType {
-  id: string;
-  name: string;
-}
-
-interface EmployeeType {
-  id: string;
-  name: string;
-}
+import { useDispatch, useSelector } from 'react-redux';
+import { 
+  fetchInventory, 
+  fetchLowStockItems,
+  updateInventoryItem, 
+  addInventoryTransaction, 
+  createInventoryItem,
+  fetchActiveSuppliers,
+  fetchActiveEmployees,
+  selectAllInventoryItems,
+  selectInventoryLoading,
+  selectInventoryError,
+  selectActiveSuppliers,
+  selectActiveEmployees
+} from '../redux/slices/inventorySlice';
+import { InventoryItem } from '../services/inventoryService';
+import { AppDispatch, RootState } from '../redux/store';
 
 // Item types for a printing press
 const itemTypes = [
@@ -37,8 +31,14 @@ const itemTypes = [
 ];
 
 const InventoryList: React.FC = () => {
-  const dispatch = useAppDispatch();
-  const { inventoryItems, isLoading } = useAppSelector((state) => state.inventory);
+  const dispatch = useDispatch<AppDispatch>();
+  
+  // Redux state
+  const inventoryItems = useSelector(selectAllInventoryItems);
+  const isLoading = useSelector(selectInventoryLoading);
+  const error = useSelector(selectInventoryError);
+  const activeSuppliers = useSelector(selectActiveSuppliers);
+  const activeEmployees = useSelector(selectActiveEmployees);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [quantityDialogOpen, setQuantityDialogOpen] = useState(false);
@@ -51,6 +51,7 @@ const InventoryList: React.FC = () => {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
+  const [showLowStock, setShowLowStock] = useState(false);
   
   // State for new item form
   const [newItem, setNewItem] = useState({
@@ -63,43 +64,56 @@ const InventoryList: React.FC = () => {
     supplierId: ''
   });
 
-  // Mock data since we don't have these in Redux yet
-  const mockSuppliers: SupplierType[] = [
-    { id: '1', name: 'Paper Supplies Co.' },
-    { id: '2', name: 'Ink Masters Ltd.' },
-    { id: '3', name: 'Print Materials Inc.' }
-  ];
-
-  const mockEmployees: EmployeeType[] = [
-    { id: '1', name: 'John Smith' },
-    { id: '2', name: 'Maria Garcia' },
-    { id: '3', name: 'Alex Johnson' }
-  ];
-
   useEffect(() => {
     dispatch(fetchInventory());
+    
+    dispatch(fetchActiveSuppliers());
+    dispatch(fetchActiveEmployees());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (error) {
+      setSnackbarMessage(`Error: ${error}`);
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    }
+  }, [error]);
 
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
+    setShowLowStock(false); // Reset low stock filter when searching
   };
 
-  const filteredItems = inventoryItems.filter(item =>
-    item.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (item.sku && item.sku.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    item.itemType.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleLowStockFilter = () => {
+    if (showLowStock) {
+      // If already showing low stock, return to all items
+      dispatch(fetchInventory());
+      setShowLowStock(false);
+    } else {
+      // Show only low stock items
+      dispatch(fetchLowStockItems());
+      setShowLowStock(true);
+    }
+  };
+
+  const filteredItems = searchTerm 
+    ? inventoryItems.filter(item =>
+        item.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.itemType.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    : inventoryItems;
 
   const handleOpenQuantityDialog = (item: InventoryItem, type: 'add' | 'remove') => {
     setSelectedItem(item);
     setAdjustmentType(type);
     setAdjustmentAmount(1);
     
-    // Set default selections for supplier or employee
-    if (type === 'add' && mockSuppliers.length > 0) {
-      setSelectedSupplierId(mockSuppliers[0].id);
-    } else if (type === 'remove' && mockEmployees.length > 0) {
-      setSelectedEmployeeId(mockEmployees[0].id);
+    // Set default selections based on type
+    if (type === 'add' && activeSuppliers.length > 0) {
+      setSelectedSupplierId(String(activeSuppliers[0].id));
+    } else if (type === 'remove' && activeEmployees.length > 0) {
+      setSelectedEmployeeId(String(activeEmployees[0].id));
     }
     
     setQuantityDialogOpen(true);
@@ -115,8 +129,8 @@ const InventoryList: React.FC = () => {
   const handleOpenAddItemDialog = () => {
     setAddItemDialogOpen(true);
     // Set default supplier if available
-    if (mockSuppliers.length > 0) {
-      setNewItem(prev => ({ ...prev, supplierId: mockSuppliers[0].id }));
+    if (activeSuppliers.length > 0) {
+      setNewItem(prev => ({ ...prev, supplierId: String(activeSuppliers[0].id) }));
     }
   };
 
@@ -177,15 +191,15 @@ const InventoryList: React.FC = () => {
         return;
       }
 
-      // Convert to your InventoryItem format
+      // Convert to the proper format for creating an inventory item
       await dispatch(createInventoryItem({
         itemName: newItem.itemName,
         sku: newItem.sku,
         itemType: newItem.itemType,
         quantity: newItem.quantity,
         minStockLevel: newItem.minStockLevel,
-        unitPrice: newItem.unitPrice
-        // Add other fields as needed by your API
+        unitPrice: newItem.unitPrice,
+        supplierId: newItem.supplierId ? Number(newItem.supplierId) : undefined
       })).unwrap();
 
       setSnackbarMessage('Inventory item created successfully');
@@ -208,26 +222,21 @@ const InventoryList: React.FC = () => {
         ? selectedItem.quantity + adjustmentAmount
         : Math.max(0, selectedItem.quantity - adjustmentAmount);
 
-      // Selected person based on transaction type
-      const personId = adjustmentType === 'add' ? selectedSupplierId : selectedEmployeeId;
-      // Removed unused variable 'personName'
-
       // First, update the item quantity
       await dispatch(updateInventoryItem({
         id: selectedItem.id,
         data: { quantity: newQuantity }
       })).unwrap();
 
-      // Then add a transaction record - adjust according to your actual transaction type
+      // Then add a transaction record
       await dispatch(addInventoryTransaction({
         inventoryId: selectedItem.id,
         transactionData: {
           transactionType: adjustmentType === 'add' ? 'stock_in' : 'stock_out',
           quantity: adjustmentAmount,
-          createdBy: personId,
-          // If your transaction object doesn't have notes, you can handle this differently
-          // e.g., store the person info in another way or skip it for now
-          // Removed notes field to fix TypeScript error
+          createdBy: Number(adjustmentType === 'add' ? selectedSupplierId : selectedEmployeeId),
+          isSupplier: adjustmentType === 'add',
+          notes: `${adjustmentType === 'add' ? 'Stock In' : 'Stock Out'} transaction`
         }
       })).unwrap();
 
@@ -235,7 +244,7 @@ const InventoryList: React.FC = () => {
       setSnackbarSeverity('success');
     } catch (error) {
       console.error('Error adjusting inventory:', error);
-      setSnackbarMessage(`Error ${adjustmentType === 'add' ? 'adding' : 'removing'} inventory: ${error}`);
+      setSnackbarMessage(`Error ${adjustmentType === 'add' ? 'adding' : 'removing'} inventory`);
       setSnackbarSeverity('error');
     } finally {
       setSnackbarOpen(true);
@@ -278,7 +287,14 @@ const InventoryList: React.FC = () => {
             ),
           }}
         />
-        <Button variant="outlined" color="error" sx={{ mr: 1 }}>Low Stock</Button>
+        <Button 
+          variant={showLowStock ? "contained" : "outlined"} 
+          color="error" 
+          onClick={handleLowStockFilter}
+          sx={{ mr: 1 }}
+        >
+          {showLowStock ? "All Items" : "Low Stock"}
+        </Button>
       </Box>
 
       {isLoading && inventoryItems.length === 0 ? (
@@ -349,6 +365,7 @@ const InventoryList: React.FC = () => {
                           color="primary"
                           onClick={() => handleOpenQuantityDialog(item, 'add')}
                           sx={{ mr: 1 }}
+                          disabled={activeSuppliers.length === 0}
                         >
                           Stock In
                         </Button>
@@ -357,7 +374,7 @@ const InventoryList: React.FC = () => {
                           variant="outlined"
                           color="error"
                           onClick={() => handleOpenQuantityDialog(item, 'remove')}
-                          disabled={quantity <= 0}
+                          disabled={quantity <= 0 || activeEmployees.length === 0}
                         >
                           Stock Out
                         </Button>
@@ -404,7 +421,7 @@ const InventoryList: React.FC = () => {
                   label="Supplier"
                   onChange={handleSupplierChange}
                 >
-                  {mockSuppliers.map((supplier) => (
+                  {activeSuppliers.map((supplier) => (
                     <MenuItem key={supplier.id} value={supplier.id}>
                       {supplier.name}
                     </MenuItem>
@@ -420,7 +437,7 @@ const InventoryList: React.FC = () => {
                   label="Employee"
                   onChange={handleEmployeeChange}
                 >
-                  {mockEmployees.map((employee) => (
+                  {activeEmployees.map((employee) => (
                     <MenuItem key={employee.id} value={employee.id}>
                       {employee.name}
                     </MenuItem>
@@ -518,7 +535,7 @@ const InventoryList: React.FC = () => {
                     label="Supplier"
                     onChange={handleNewItemSelectChange}
                   >
-                    {mockSuppliers.map(supplier => (
+                    {activeSuppliers.map(supplier => (
                       <MenuItem key={supplier.id} value={supplier.id}>
                         {supplier.name}
                       </MenuItem>

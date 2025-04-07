@@ -1,404 +1,208 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { supabase } from '../../supabaseClient';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { suppliersService, Supplier, InsertSupplier } from '../../services/suppliersService';
+import { RootState } from '../store';
 
-export interface Supplier {
-  id: number;
-  name: string;
-  contactPerson: string;
-  email: string;
-  phone: string;
-  status: string;
-  address?: string | null;
-  notes?: string | null;
-  businessType?: string | null;
-  taxId?: string | null;
-  industry?: string | null;
-  relationship_since?: string | null;
-  alternatePhone?: string | null;
-  billingAddressSame?: boolean;
-  billingAddress?: string | null;
-  paymentTerms?: string | null;
-  productCategories?: string | null;
-  leadTime?: number | null;
-  taxExempt?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export type InsertSupplier = Omit<Supplier, 'id' | 'createdAt' | 'updatedAt'>;
-export type UpdateSupplier = Partial<InsertSupplier>;
-
-// Helper function to normalize the data from the database to our Supplier interface
-const normalizeSupplierData = (data: any): Supplier => {
-  // Map status to Active/Inactive
-  let status = data.status || 'Active';
-  if (status !== 'Inactive' && status !== 'Active') {
-    status = status === 'Regular' || status === 'New' ? 'Active' : 'Inactive';
-  }
-  
-  // The database column is "contactPerson" (camelCase, confirmed from schema)
-  const contactPerson = data.contactPerson || '';
-  
-  // Parse additional fields from JSON in notes
-  let parsedNotes: any = {};
-  let notes = '';
-  
-  try {
-    if (data.notes && typeof data.notes === 'string') {
-      // Try to parse as JSON first
-      try {
-        parsedNotes = JSON.parse(data.notes);
-        console.log('Successfully parsed notes as JSON:', parsedNotes);
-      } catch (e) {
-        // If it's not valid JSON, just use it as plain text
-        notes = data.notes;
-        console.log('Notes is not JSON, using as plain text');
-      }
-    }
-  } catch (e) {
-    console.error('Error parsing notes:', e);
-  }
-  
-  // Extract fields from parsed JSON or use defaults
-  const originalNotes = parsedNotes.originalNotes || '';
-  const businessType = parsedNotes.businessType || data.businessType || 'Company';
-  const taxId = parsedNotes.taxId || data.taxId || '';
-  const industry = parsedNotes.industry || data.industry || '';
-  const relationship_since = parsedNotes.relationship_since || data.relationship_since || null;
-  const alternatePhone = parsedNotes.alternatePhone || data.alternatePhone || '';
-  const billingAddressSame = parsedNotes.billingAddressSame !== undefined ? parsedNotes.billingAddressSame : 
-                            (data.billingAddressSame !== undefined ? data.billingAddressSame : true);
-  const billingAddress = parsedNotes.billingAddress || data.billingAddress || null;
-  const paymentTerms = parsedNotes.paymentTerms || data.paymentTerms || '30 Days Term';
-  const productCategories = parsedNotes.productCategories || data.productCategories || '';
-  const leadTime = parsedNotes.leadTime !== undefined ? parsedNotes.leadTime : 
-                  (data.leadTime !== null && data.leadTime !== undefined ? data.leadTime : 7);
-  const taxExempt = parsedNotes.taxExempt !== undefined ? parsedNotes.taxExempt : 
-                   (data.taxExempt !== undefined ? data.taxExempt : false);
-  
-  // Use originalNotes if we parsed JSON, otherwise use the notes field directly
-  notes = originalNotes || notes;
-  
-  return {
-    id: data.id,
-    name: data.name || '',
-    contactPerson: contactPerson,
-    email: data.email || '',
-    phone: data.phone || '',
-    status: status,
-    address: data.address || null,
-    notes: notes || null,
-    businessType: businessType,
-    taxId: taxId,
-    industry: industry,
-    relationship_since: relationship_since,
-    alternatePhone: alternatePhone,
-    billingAddressSame: billingAddressSame,
-    billingAddress: billingAddress,
-    paymentTerms: paymentTerms,
-    productCategories: productCategories,
-    leadTime: leadTime,
-    taxExempt: taxExempt,
-    createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
-  };
-};
-
-// Now we know the exact field name: contactPerson (camelCase)
-const prepareSupplierDataForDb = (supplier: InsertSupplier | UpdateSupplier) => {
-  // Use the required fields with the exact names from the database schema
-  const dbData: any = {
-    name: supplier.name || 'Unnamed Supplier',
-    contactPerson: supplier.contactPerson || 'Unknown' // The DB field is camelCase per schema
-  };
-  
-  // Store all fields in a JSON string in the notes field
-  // This avoids any issue with column names
-  const allFields: any = {
-    // Core fields
-    contactPerson: supplier.contactPerson || 'Unknown',
-    email: supplier.email || '',
-    phone: supplier.phone || '',
-    status: supplier.status || 'Active',
-    address: supplier.address || '',
-    
-    // Additional fields
-    businessType: supplier.businessType || 'Company',
-    taxId: supplier.taxId || '',
-    industry: supplier.industry || '',
-    relationship_since: supplier.relationship_since || null,
-    alternatePhone: supplier.alternatePhone || '',
-    billingAddressSame: supplier.billingAddressSame !== undefined ? supplier.billingAddressSame : true,
-    billingAddress: supplier.billingAddress || null,
-    paymentTerms: supplier.paymentTerms || '30 Days Term',
-    leadTime: supplier.leadTime !== undefined ? supplier.leadTime : 7,
-    productCategories: supplier.productCategories || '',
-    taxExempt: supplier.taxExempt !== undefined ? supplier.taxExempt : false,
-    
-    // Original notes if any
-    originalNotes: supplier.notes || ''
-  };
-  
-  // Store ALL fields in notes to avoid any column name issues
-  dbData.notes = JSON.stringify(allFields);
-  
-  // Remove timestamp fields that cause errors
-  delete dbData.createdAt;
-  delete dbData.updatedAt;
-  
-  return dbData;
-};
-
-// Define state type
 interface SuppliersState {
-  suppliers: Supplier[];
-  isLoading: boolean;
+  items: Supplier[];
+  selectedSupplier: Supplier | null;
+  status: 'idle' | 'loading' | 'succeeded' | 'failed';
   error: string | null;
 }
 
 // Initial state
 const initialState: SuppliersState = {
-  suppliers: [],
-  isLoading: false,
+  items: [],
+  selectedSupplier: null,
+  status: 'idle',
   error: null
 };
 
-// Define thunk for fetching suppliers
+// Async thunks
 export const fetchSuppliers = createAsyncThunk(
   'suppliers/fetchSuppliers',
   async (_, { rejectWithValue }) => {
     try {
       return await suppliersService.getSuppliers();
-    } catch (error: any) {
-      return rejectWithValue(error.message || 'Failed to fetch suppliers');
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch suppliers');
     }
   }
 );
 
-// Create suppliers slice
+export const fetchSupplierById = createAsyncThunk(
+  'suppliers/fetchSupplierById',
+  async (id: number, { rejectWithValue }) => {
+    try {
+      return await suppliersService.getSupplierById(id);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch supplier');
+    }
+  }
+);
+
+export const searchSuppliers = createAsyncThunk(
+  'suppliers/searchSuppliers',
+  async (query: string, { rejectWithValue }) => {
+    try {
+      return await suppliersService.searchSuppliers(query);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to search suppliers');
+    }
+  }
+);
+
+export const createSupplier = createAsyncThunk(
+  'suppliers/createSupplier',
+  async (supplier: InsertSupplier, { rejectWithValue }) => {
+    try {
+      return await suppliersService.createSupplier(supplier);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to create supplier');
+    }
+  }
+);
+
+export const updateSupplier = createAsyncThunk(
+  'suppliers/updateSupplier',
+  async ({ id, supplier }: { id: number; supplier: InsertSupplier }, { rejectWithValue }) => {
+    try {
+      return await suppliersService.updateSupplier(id, supplier);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to update supplier');
+    }
+  }
+);
+
+export const deleteSupplier = createAsyncThunk(
+  'suppliers/deleteSupplier',
+  async (id: number, { rejectWithValue }) => {
+    try {
+      await suppliersService.deleteSupplier(id);
+      return id;
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete supplier');
+    }
+  }
+);
+
+// Create the slice
 const suppliersSlice = createSlice({
   name: 'suppliers',
   initialState,
   reducers: {
-    clearSuppliersError: (state) => {
+    setSelectedSupplier: (state, action: PayloadAction<Supplier | null>) => {
+      state.selectedSupplier = action.payload;
+    },
+    clearError: (state) => {
       state.error = null;
-    }
+    },
   },
   extraReducers: (builder) => {
     builder
+      // Fetch all suppliers
       .addCase(fetchSuppliers.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
+        state.status = 'loading';
       })
       .addCase(fetchSuppliers.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.suppliers = action.payload;
+        state.status = 'succeeded';
+        state.items = action.payload;
+        state.error = null;
       })
       .addCase(fetchSuppliers.rejected, (state, action) => {
-        state.isLoading = false;
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+      
+      // Fetch supplier by ID
+      .addCase(fetchSupplierById.pending, (state) => {
+        state.status = 'loading';
+      })
+      .addCase(fetchSupplierById.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.selectedSupplier = action.payload;
+        state.error = null;
+      })
+      .addCase(fetchSupplierById.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+      
+      // Search suppliers
+      .addCase(searchSuppliers.pending, (state) => {
+        state.status = 'loading';
+      })
+      .addCase(searchSuppliers.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.items = action.payload;
+        state.error = null;
+      })
+      .addCase(searchSuppliers.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+      
+      // Create supplier
+      .addCase(createSupplier.pending, (state) => {
+        state.status = 'loading';
+      })
+      .addCase(createSupplier.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.items.push(action.payload);
+        state.error = null;
+      })
+      .addCase(createSupplier.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+      
+      // Update supplier
+      .addCase(updateSupplier.pending, (state) => {
+        state.status = 'loading';
+      })
+      .addCase(updateSupplier.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        const updatedSupplier = action.payload;
+        const index = state.items.findIndex(supplier => supplier.id === updatedSupplier.id);
+        if (index !== -1) {
+          state.items[index] = updatedSupplier;
+        }
+        if (state.selectedSupplier?.id === updatedSupplier.id) {
+          state.selectedSupplier = updatedSupplier;
+        }
+        state.error = null;
+      })
+      .addCase(updateSupplier.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload as string;
+      })
+      
+      // Delete supplier
+      .addCase(deleteSupplier.pending, (state) => {
+        state.status = 'loading';
+      })
+      .addCase(deleteSupplier.fulfilled, (state, action) => {
+        state.status = 'succeeded';
+        state.items = state.items.filter(supplier => supplier.id !== action.payload);
+        if (state.selectedSupplier?.id === action.payload) {
+          state.selectedSupplier = null;
+        }
+        state.error = null;
+      })
+      .addCase(deleteSupplier.rejected, (state, action) => {
+        state.status = 'failed';
         state.error = action.payload as string;
       });
-  }
+  },
 });
 
-export const { clearSuppliersError } = suppliersSlice.actions;
+// Export actions and reducer
+export const { setSelectedSupplier, clearError } = suppliersSlice.actions;
 export default suppliersSlice.reducer;
 
-export const suppliersService = {
-  async getSuppliers(): Promise<Supplier[]> {
-    try {
-      console.log('Fetching suppliers...');
-      
-      const { data, error } = await supabase
-        .from('suppliers')
-        .select('*')
-        .order('name');
-  
-      if (error) {
-        console.error('Error fetching suppliers:', error);
-        return []; 
-      }
-  
-      console.log('Raw supplier data from database:', data);
-      
-      if (!data || data.length === 0) {
-        console.log('No suppliers found in the database');
-        return []; 
-      }
-  
-      return data.map(normalizeSupplierData);
-    } catch (error) {
-      console.error('Unexpected error in getSuppliers:', error);
-      return [];
-    }
-  },
-
-  async getSupplierById(id: number): Promise<Supplier> {
-    try {
-      const { data, error } = await supabase
-        .from('suppliers')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) {
-        console.error(`Error fetching supplier with id ${id}:`, error);
-        throw new Error(`Supplier with ID ${id} not found`);
-      }
-
-      if (!data) {
-        console.warn(`Supplier with id ${id} not found`);
-        throw new Error(`Supplier with ID ${id} not found`);
-      }
-
-      return normalizeSupplierData(data);
-    } catch (error) {
-      console.error('Unexpected error in getSupplierById:', error);
-      throw error;
-    }
-  },
-
-  async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
-    try {
-      console.log('Creating supplier with data:', supplier);
-      
-      // Convert supplier data to match database schema
-      const supplierData = prepareSupplierDataForDb(supplier);
-      console.log('Prepared data for database:', supplierData);
-      
-      const { data, error } = await supabase
-        .from('suppliers')
-        .insert([supplierData])
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error creating supplier:', error);
-        throw new Error(error.message);
-      }
-
-      if (!data) {
-        throw new Error('Failed to create supplier - no data returned');
-      }
-
-      return normalizeSupplierData(data);
-    } catch (error) {
-      console.error('Unexpected error in createSupplier:', error);
-      throw error;
-    }
-  },
-
-  async updateSupplier(id: number, supplier: UpdateSupplier): Promise<Supplier> {
-    try {
-      console.log(`Updating supplier ${id} with data:`, supplier);
-      const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
-      
-      // First verify the supplier exists and get the current data
-      console.log(`Checking if supplier with ID ${numericId} exists...`);
-      const { data: existingSupplier, error: checkError } = await supabase
-        .from('suppliers')
-        .select('*')
-        .eq('id', numericId)
-        .single();
-      
-      console.log('Existing supplier data:', existingSupplier);
-        
-      if (checkError || !existingSupplier) {
-        console.error(`Supplier with id ${numericId} not found:`, checkError);
-        throw new Error(`Supplier with id ${numericId} not found`);
-      }
-      
-      // This is a radical approach: Instead of updating, we'll delete and re-insert
-      // This avoids any issues with update triggers and the updatedAt field
-      console.log('Using delete + insert approach to avoid updatedAt error');
-      
-      // First, delete the existing supplier
-      const { error: deleteError } = await supabase
-        .from('suppliers')
-        .delete()
-        .eq('id', numericId);
-        
-      if (deleteError) {
-        console.error(`Error deleting supplier ${numericId}:`, deleteError);
-        throw new Error(deleteError.message);
-      }
-      
-      // Convert supplier data to match database schema
-      const supplierData = prepareSupplierDataForDb(supplier);
-      console.log('Prepared data for database re-insert:', supplierData);
-      
-      // Ensure we preserve the ID
-      supplierData.id = numericId;
-      
-      // Now re-insert the supplier with the same ID
-      const { data: insertedData, error: insertError } = await supabase
-        .from('suppliers')
-        .insert([supplierData])
-        .select()
-        .single();
-        
-      if (insertError) {
-        console.error(`Error re-inserting supplier ${numericId}:`, insertError);
-        
-        // Emergency fallback: If re-insert fails, try to restore the original data
-        console.log('Re-insert failed, attempting to restore original data');
-        
-        // Prepare the original data for re-insertion
-        const originalData = {
-          id: numericId,
-          name: existingSupplier.name,
-          contactperson: existingSupplier.contactperson,
-          email: existingSupplier.email,
-          phone: existingSupplier.phone,
-          status: existingSupplier.status,
-          address: existingSupplier.address,
-          notes: existingSupplier.notes
-        };
-        
-        const { error: restoreError } = await supabase
-          .from('suppliers')
-          .insert([originalData]);
-          
-        if (restoreError) {
-          console.error(`Failed to restore original data for supplier ${numericId}:`, restoreError);
-        } else {
-          console.log(`Successfully restored original data for supplier ${numericId}`);
-        }
-        
-        throw new Error(insertError.message);
-      }
-      
-      if (!insertedData) {
-        throw new Error(`Re-insert failed for supplier with id ${numericId} - no data returned`);
-      }
-      
-      console.log('Successfully updated supplier using delete+insert approach:', insertedData);
-      return normalizeSupplierData(insertedData);
-    } catch (error) {
-      console.error('Unexpected error in updateSupplier:', error);
-      throw error;
-    }
-  },
-
-  async searchSuppliers(query: string): Promise<Supplier[]> {
-    try {
-      const searchTerm = `%${query}%`;
-      
-      const { data, error } = await supabase
-        .from('suppliers')
-        .select('*')
-        .or(`name.ilike.${searchTerm},\"contactPerson\".ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
-        .order('name');
-
-      if (error) {
-        console.error('Error searching suppliers:', error);
-        return [];
-      }
-
-      return (data || []).map(normalizeSupplierData);
-    } catch (error) {
-      console.error('Unexpected error in searchSuppliers:', error);
-      return []; 
-    }
-  }
-};
+// Selectors
+export const selectAllSuppliers = (state: RootState) => state.suppliers.items;
+export const selectSupplierById = (state: RootState, supplierId: number) => 
+  state.suppliers.items.find(supplier => supplier.id === supplierId);
+export const selectSelectedSupplier = (state: RootState) => state.suppliers.selectedSupplier;
+export const selectSuppliersStatus = (state: RootState) => state.suppliers.status;
+export const selectSuppliersError = (state: RootState) => state.suppliers.error;

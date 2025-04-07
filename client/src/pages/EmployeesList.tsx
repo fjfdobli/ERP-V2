@@ -1,12 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Avatar, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, Divider, FormControlLabel, Checkbox, Tab, Tabs, SelectChangeEvent } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon, Refresh as RefreshIcon, Person, Work, ContactPhone, Assignment, School } from '@mui/icons-material';
-import { employeesService, Employee, InsertEmployee } from '../services/employeesService';
-import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { fetchEmployees } from '../redux/slices/employeesSlice';
+import { Employee, InsertEmployee } from '../services/employeesService';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { useDispatch, useSelector } from 'react-redux';
+import { 
+  fetchEmployees, 
+  searchEmployees, 
+  createEmployee, 
+  updateEmployee,
+  deleteEmployee,
+  selectAllEmployees,
+  selectEmployeesLoading,
+  selectEmployeesError
+} from '../redux/slices/employeesSlice';
+import { AppDispatch } from '../redux/store';
+import { RootState } from '../redux/store';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -58,30 +69,6 @@ interface EmployeeViewDetailsProps {
   open: boolean;
   employee: Employee | null;
   onClose: () => void;
-}
-
-// Define interface for the Redux state
-interface RootState {
-  employees: {
-    employees: any[]; // Use a type that matches the employees in your Redux store
-    isLoading: boolean;
-    error: string | null;
-  };
-  // Add other state slices as needed
-}
-
-// Type for the redux-stored employee that may have different structure
-interface ReduxEmployee {
-  id: string | number;
-  firstName: string;
-  lastName: string;
-  email?: string;
-  phone?: string;
-  position: string;
-  department?: string;
-  status?: string;
-  hireDate?: string | null;
-  // Add other fields as needed
 }
 
 // Tab components for View Details Dialog
@@ -253,10 +240,11 @@ const EmployeeViewDetails: React.FC<EmployeeViewDetailsProps> = ({ open, employe
 };
 
 const EmployeesList: React.FC = () => {
-  const dispatch = useAppDispatch();
-  const { employees, isLoading } = useAppSelector((state: RootState) => state.employees);
-  const [localEmployees, setLocalEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const dispatch = useDispatch<AppDispatch>();
+  const employees = useSelector(selectAllEmployees);
+  const isLoading = useSelector(selectEmployeesLoading);
+  const error = useSelector(selectEmployeesError);
+  
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [openDialog, setOpenDialog] = useState<boolean>(false);
   const [openViewDialog, setOpenViewDialog] = useState<boolean>(false);
@@ -330,73 +318,48 @@ const EmployeesList: React.FC = () => {
     setSnackbar({ open: true, message, severity });
   }, []);
 
-  const fetchEmployeesData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await employeesService.getEmployees();
-      setLocalEmployees(data);
-      dispatch(fetchEmployees());
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching employees:', error);
-      showSnackbar('Failed to load employees', 'error');
-      setLoading(false);
-    }
-  }, [dispatch, showSnackbar]);
+  const fetchEmployeesData = useCallback(() => {
+    dispatch(fetchEmployees());
+  }, [dispatch]);
 
   useEffect(() => {
     fetchEmployeesData();
   }, [fetchEmployeesData]);
 
-  const handleSearch = async () => {
+  // Show error in snackbar if fetch fails
+  useEffect(() => {
+    if (error) {
+      showSnackbar(`Error: ${error}`, 'error');
+    }
+  }, [error, showSnackbar]);
+
+  const handleSearch = () => {
     if (!searchQuery.trim()) {
-      fetchEmployeesData();
+      dispatch(fetchEmployees());
       return;
     }
     
-    setLoading(true);
-    try {
-      const data = await employeesService.searchEmployees(searchQuery);
-      setLocalEmployees(data);
-    } catch (error) {
-      console.error('Error searching employees:', error);
-      showSnackbar('Search failed', 'error');
-    } finally {
-      setLoading(false);
+    dispatch(searchEmployees(searchQuery));
+  };
+
+  const handleDelete = async (employee: Employee) => {
+    if (window.confirm(`Are you sure you want to delete ${employee.firstName} ${employee.lastName}?`)) {
+      try {
+        const employeeId = typeof employee.id === 'string' 
+          ? parseInt(employee.id, 10) 
+          : employee.id;
+          
+        await dispatch(deleteEmployee(employeeId));
+        showSnackbar('Employee deleted successfully', 'success');
+      } catch (error) {
+        console.error('Error deleting employee:', error);
+        showSnackbar('Failed to delete employee: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
+      }
     }
   };
 
-  // Helper function to convert Redux employee to service Employee type
-  const convertToServiceEmployee = (reduxEmployee: any): Employee => {
-    return {
-      id: reduxEmployee.id,
-      firstName: reduxEmployee.firstName || '',
-      lastName: reduxEmployee.lastName || '',
-      email: reduxEmployee.email || '',
-      phone: reduxEmployee.phone || '',
-      position: reduxEmployee.position || '',
-      department: reduxEmployee.department || '',
-      status: reduxEmployee.status || 'Active',
-      hireDate: reduxEmployee.hireDate || null,
-      // Add other fields as needed with sensible defaults
-      address: reduxEmployee.address || null,
-      emergencyContact: reduxEmployee.emergencyContact || null,
-      emergencyPhone: reduxEmployee.emergencyPhone || null,
-      employeeId: reduxEmployee.employeeId || null,
-      notes: reduxEmployee.notes || null,
-      salary: reduxEmployee.salary || null,
-      bankDetails: reduxEmployee.bankDetails || null,
-      taxId: reduxEmployee.taxId || null,
-      birthDate: reduxEmployee.birthDate || null,
-      createdAt: reduxEmployee.createdAt || '',
-      updatedAt: reduxEmployee.updatedAt || ''
-    };
-  };
-
-  const handleOpenViewDialog = (employee: any) => {
-    // Check if this is a Redux employee or a service Employee
-    const serviceEmployee = 'firstName' in employee ? employee : convertToServiceEmployee(employee);
-    setSelectedEmployee(serviceEmployee);
+  const handleOpenViewDialog = (employee: Employee) => {
+    setSelectedEmployee(employee);
     setOpenViewDialog(true);
   };
 
@@ -492,7 +455,6 @@ const EmployeesList: React.FC = () => {
       return;
     }
 
-    setLoading(true);
     try {
       let hireDateString: string | undefined = undefined;
       if (formData.hireDate) {
@@ -524,31 +486,22 @@ const EmployeesList: React.FC = () => {
         birthDate: birthDateString
       };
 
-      console.log('Submitting employee data:', employeeData);
-
-      let result;
       if (selectedEmployee && selectedEmployee.id) {
-        console.log('Updating employee with ID:', selectedEmployee.id, 'Type:', typeof selectedEmployee.id);
         const employeeId = typeof selectedEmployee.id === 'string' 
           ? parseInt(selectedEmployee.id, 10) 
           : selectedEmployee.id;
           
-        result = await employeesService.updateEmployee(employeeId, employeeData);
-        console.log('Updated employee result:', result);
+        await dispatch(updateEmployee({ id: employeeId, employee: employeeData }));
         showSnackbar('Employee updated successfully', 'success');
       } else {
-        result = await employeesService.createEmployee(employeeData);
-        console.log('Created employee result:', result);
+        await dispatch(createEmployee(employeeData));
         showSnackbar('Employee created successfully', 'success');
       }
       
-      await fetchEmployeesData();
       handleCloseDialog();
     } catch (error) {
       console.error('Error saving employee:', error);
       showSnackbar('Failed to save employee: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -568,10 +521,6 @@ const EmployeesList: React.FC = () => {
   const getInitials = (firstName: string, lastName: string) => {
     return `${firstName ? firstName[0] || '' : ''}${lastName ? lastName[0] || '' : ''}`.toUpperCase();
   };
-
-  // Choose which employees list to display (redux or local)
-  const displayEmployees = employees && employees.length > 0 ? employees : localEmployees;
-  const displayLoading = isLoading || loading;
 
   return (
     <Box>
@@ -615,7 +564,7 @@ const EmployeesList: React.FC = () => {
         </Button>
       </Box>
 
-      {displayLoading ? (
+      {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
           <CircularProgress />
         </Box>
@@ -632,8 +581,8 @@ const EmployeesList: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {displayEmployees && displayEmployees.length > 0 ? (
-                displayEmployees.map((employee) => (
+              {employees && employees.length > 0 ? (
+                employees.map((employee) => (
                   <TableRow key={employee.id}>
                     <TableCell>
                       <Box sx={{ 
@@ -679,8 +628,17 @@ const EmployeesList: React.FC = () => {
                       <Button 
                         size="small"
                         onClick={() => handleOpenDialog(employee)}
+                        sx={{ mr: 1 }}
                       >
                         Edit
+                      </Button>
+                      <Button 
+                        size="small"
+                        onClick={() => handleDelete(employee)}
+                        color="error"
+                        sx={{ mr: 1 }}
+                      >
+                        Delete
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -992,9 +950,9 @@ const EmployeesList: React.FC = () => {
             onClick={handleSubmit} 
             variant="contained" 
             color="primary"
-            disabled={displayLoading}
+            disabled={isLoading}
           >
-            {displayLoading ? <CircularProgress size={24} /> : (selectedEmployee ? 'Save Employee' : 'Add Employee')}
+            {isLoading ? <CircularProgress size={24} /> : (selectedEmployee ? 'Save Employee' : 'Add Employee')}
           </Button>
         </DialogActions>
       </Dialog>
