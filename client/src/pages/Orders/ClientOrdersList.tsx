@@ -1,8 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Chip, Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem, SelectChangeEvent, Tabs, Tab, Snackbar, Alert, CircularProgress } from '@mui/material';
 import { Search as SearchIcon, Refresh as RefreshIcon } from '@mui/icons-material';
-import { ClientOrder, clientOrdersService } from '../../services/clientOrdersService';
+import { 
+  fetchClientOrders,
+  changeClientOrderStatus,
+  selectAllClientOrders,
+  selectApprovedOrders,
+  selectCompletedOrders,
+  selectRejectedOrders,
+  selectClientOrdersLoading,
+  selectClientOrdersError
+} from '../../redux/slices/clientOrdersSlice';
+import { ClientOrder } from '../../services/clientOrdersService';
+import { clientOrdersService } from '../../services/clientOrdersService';
 import { OrderRequestItem } from '../../services/orderRequestsService';
+import { AppDispatch } from '../../redux/store';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -46,6 +59,7 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
   const [tabValue, setTabValue] = useState(0);
   const [orderHistory, setOrderHistory] = useState<any[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [completeOrderHistory, setCompleteOrderHistory] = useState<any[]>([]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -55,32 +69,117 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
     if (order && open) {
       setSelectedStatus(order.status);
       
-      // Generate order history entries
-      const historyEntries = [
-        {
-          date: order.created_at,
-          status: 'Created',
-          updatedBy: 'System',
-          notes: 'Order created'
+      // Fetch complete order history from the database
+      const fetchOrderHistory = async () => {
+        try {
+          const history = await clientOrdersService.getOrderHistory(undefined, order.id);
+          setCompleteOrderHistory(history);
+          
+          if (history.length === 0) {
+            // Generate basic history entries if no database history found
+            const historyEntries = [
+              {
+                date: order.created_at,
+                status: 'Created',
+                updatedBy: 'System',
+                notes: 'Order created'
+              }
+            ];
+            
+            // Add entry for status changes if updated_at is different from created_at
+            // Make sure to handle potential undefined values
+            if (order.updated_at && order.created_at && 
+                new Date(order.updated_at).getTime() !== new Date(order.created_at).getTime()) {
+              historyEntries.push({
+                date: order.updated_at,
+                status: order.status,
+                updatedBy: 'Admin',
+                notes: `Status changed to ${order.status}`
+              });
+            }
+            
+            setOrderHistory(historyEntries);
+          } else {
+            // Format database history for display
+            const formattedHistory = history.map(entry => ({
+              date: entry.created_at,
+              status: entry.status,
+              updatedBy: entry.changed_by,
+              notes: entry.notes
+            }));
+            
+            // Add the initial creation event if not in history
+            if (!history.some(h => h.status === 'Created')) {
+              formattedHistory.push({
+                date: order.created_at,
+                status: 'Created',
+                updatedBy: 'System',
+                notes: 'Order created'
+              });
+            }
+            
+            // Sort by date (newest to oldest)
+            formattedHistory.sort((a, b) => 
+              new Date(b.date).getTime() - new Date(a.date).getTime()
+            );
+            
+            setOrderHistory(formattedHistory);
+          }
+        } catch (error) {
+          console.error('Error fetching order history:', error);
+          
+          // Fallback to generated history
+          const historyEntries = [
+            {
+              date: order.created_at,
+              status: 'Created',
+              updatedBy: 'System',
+              notes: 'Order created'
+            }
+          ];
+          
+          if (order.updated_at && order.created_at && 
+              new Date(order.updated_at).getTime() !== new Date(order.created_at).getTime()) {
+            historyEntries.push({
+              date: order.updated_at,
+              status: order.status,
+              updatedBy: 'Admin',
+              notes: `Status changed to ${order.status}`
+            });
+          }
+          
+          setOrderHistory(historyEntries);
         }
-      ];
+      };
       
-      // Add entry for status changes if updated_at is different from created_at
-      if (order.updated_at && new Date(order.updated_at).getTime() !== new Date(order.created_at).getTime()) {
-        historyEntries.push({
-          date: order.updated_at,
-          status: order.status,
-          updatedBy: 'Admin',
-          notes: `Status changed to ${order.status}`
-        });
-      }
-      
-      setOrderHistory(historyEntries);
+      fetchOrderHistory();
     }
   }, [order, open]);
 
   const handleStatusChange = (event: SelectChangeEvent<string>) => {
-    setSelectedStatus(event.target.value);
+    const newStatus = event.target.value;
+    
+    // If changing to Pending, show a confirmation dialog
+    if (newStatus === 'Pending' && order?.status !== 'Pending') {
+      if (window.confirm('This will move the order back to Order Requests for further modifications. The order will be removed from Client Orders. Continue?')) {
+        setSelectedStatus(newStatus);
+      } else {
+        // User cancelled, revert to current status
+        setSelectedStatus(order?.status || '');
+      }
+    } 
+    // If changing to Completed, show a confirmation dialog
+    else if (newStatus === 'Completed' && order?.status !== 'Completed') {
+      if (window.confirm('Marking this order as Completed will finalize it and allow the client to place new orders. Continue?')) {
+        setSelectedStatus(newStatus);
+      } else {
+        // User cancelled, revert to current status
+        setSelectedStatus(order?.status || '');
+      }
+    }
+    else {
+      setSelectedStatus(newStatus);
+    }
   };
 
   const handleSaveStatus = () => {
@@ -95,14 +194,18 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
   if (!order) return null;
 
   const getChipColor = (status: string): 'success' | 'info' | 'warning' | 'error' | 'default' => {
-    switch (status) {
-      case 'Approved':
+    switch (status.toLowerCase()) {
+      case 'approved':
         return 'success';
-      case 'Completed':
+      case 'completed':
         return 'info';
-      case 'Pending':
+      case 'created':
+        return 'info';
+      case 'updated':
+        return 'info';
+      case 'pending':
         return 'warning';
-      case 'Rejected':
+      case 'rejected':
         return 'error';
       default:
         return 'default';
@@ -141,7 +244,9 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
           
           <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle1" fontWeight="bold">Date</Typography>
-            <Typography variant="body1">{new Date(order.date).toLocaleDateString()}</Typography>
+            <Typography variant="body1">
+              {order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}
+            </Typography>
           </Box>
           
           <Box sx={{ mb: 3 }}>
@@ -155,6 +260,15 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
           </Box>
           
           <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              Changing status to "Pending" will move this order back to Order Requests for modification.
+              Changing to "Completed" will mark the order as fulfilled and allow the client to place new orders.
+              Changing to "Rejected" will cancel the order and allow the client to place new orders.
+              Orders with "Approved" status indicate ongoing transactions and prevent the client from creating new orders.
+            </Typography>
+          </Box>
+          
+          <Box sx={{ mb: 3 }}>
             <Typography variant="subtitle1" fontWeight="bold">Status</Typography>
             <FormControl fullWidth margin="normal" size="small">
               <InputLabel id="order-status-label">Order Status</InputLabel>
@@ -164,10 +278,10 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
                 onChange={handleStatusChange}
                 label="Order Status"
               >
+                <MenuItem value="Pending">Pending (Move to Order Requests)</MenuItem>
                 <MenuItem value="Approved">Approved</MenuItem>
                 <MenuItem value="Completed">Completed</MenuItem>
                 <MenuItem value="Rejected">Rejected</MenuItem>
-                <MenuItem value="Pending">Pending</MenuItem>
               </Select>
             </FormControl>
           </Box>
@@ -197,7 +311,9 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
                 <TableBody>
                   {orderHistory.map((entry, index) => (
                     <TableRow key={index}>
-                      <TableCell>{new Date(entry.date).toLocaleString()}</TableCell>
+                      <TableCell>
+                        {entry.date ? new Date(entry.date).toLocaleString() : 'N/A'}
+                      </TableCell>
                       <TableCell>
                         <Chip 
                           label={entry.status} 
@@ -274,10 +390,14 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({ open, onClose, 
 
 // Main component for client orders list
 const ClientOrdersList: React.FC = () => {
-  const [approvedOrders, setApprovedOrders] = useState<ExtendedClientOrder[]>([]);
-  const [completedOrders, setCompletedOrders] = useState<ExtendedClientOrder[]>([]);
-  const [rejectedOrders, setRejectedOrders] = useState<ExtendedClientOrder[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  // Use Redux for state management
+  const dispatch = useDispatch<AppDispatch>();
+  const approvedOrders = useSelector(selectApprovedOrders);
+  const completedOrders = useSelector(selectCompletedOrders);
+  const rejectedOrders = useSelector(selectRejectedOrders);
+  const loading = useSelector(selectClientOrdersLoading);
+  const error = useSelector(selectClientOrdersError);
+
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedOrder, setSelectedOrder] = useState<ExtendedClientOrder | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState<boolean>(false);
@@ -285,7 +405,7 @@ const ClientOrdersList: React.FC = () => {
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
     message: string;
-    severity: 'success' | 'error';
+    severity: 'success' | 'error' | 'info';
   }>({
     open: false,
     message: '',
@@ -296,29 +416,10 @@ const ClientOrdersList: React.FC = () => {
     setActiveTab(newValue);
   };
 
-  const fetchOrders = async () => {
-    setLoading(true);
-    try {
-      const allOrders = await clientOrdersService.getClientOrders();
-      
-      setApprovedOrders(allOrders.filter(order => order.status === 'Approved'));
-      setCompletedOrders(allOrders.filter(order => order.status === 'Completed'));
-      setRejectedOrders(allOrders.filter(order => order.status === 'Rejected'));
-    } catch (error) {
-      console.error('Error fetching orders:', error);
-      setSnackbar({
-        open: true,
-        message: 'Failed to fetch orders',
-        severity: 'error'
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Fetch orders when component mounts
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    dispatch(fetchClientOrders());
+  }, [dispatch]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -348,57 +449,31 @@ const ClientOrdersList: React.FC = () => {
   };
 
   const handleStatusChange = async (orderId: number, newStatus: string) => {
-    setLoading(true);
+    if (!selectedOrder) return;
+    
     try {
-      console.log(`Attempting to change order ${orderId} status to ${newStatus}`);
+      // Use Redux action to update status
+      await dispatch(changeClientOrderStatus({ 
+        id: orderId, 
+        status: newStatus,
+        changedBy: 'Admin' // Or use actual user name/role
+      })).unwrap();
       
-      // Make the API call to change the status
-      await clientOrdersService.changeOrderStatus(orderId, newStatus);
-      
-      // Update the local state
-      const updatedOrder = { ...selectedOrder, status: newStatus } as ExtendedClientOrder;
-      
-      // If order is being set to "Pending", it should move back to Order Requests
-      // We should remove it from our client orders view
+      // If the status is changed to Pending, the order will be moved to Order Requests
+      // and removed from client orders list
       if (newStatus === 'Pending') {
-        console.log(`Order ${orderId} moved to Pending, removing from client orders view`);
-        
-        // Remove the order from whatever tab it was in
-        if (selectedOrder?.status === 'Approved') {
-          setApprovedOrders(prev => prev.filter(o => o.id !== orderId));
-        } else if (selectedOrder?.status === 'Completed') {
-          setCompletedOrders(prev => prev.filter(o => o.id !== orderId));
-        } else if (selectedOrder?.status === 'Rejected') {
-          setRejectedOrders(prev => prev.filter(o => o.id !== orderId));
-        }
-        
         setSnackbar({
           open: true,
-          message: 'Order moved back to Order Requests',
+          message: `Order moved back to Order Requests for modification`,
+          severity: 'info'
+        });
+      } else if (newStatus === 'Completed') {
+        setSnackbar({
+          open: true,
+          message: `Order marked as Completed. Client can now place new orders.`,
           severity: 'success'
         });
       } else {
-        // Handle normal status changes between Client Order tabs
-        console.log(`Moving order ${orderId} to ${newStatus} tab`);
-        
-        // Remove from current tab
-        if (selectedOrder?.status === 'Approved') {
-          setApprovedOrders(prev => prev.filter(o => o.id !== orderId));
-        } else if (selectedOrder?.status === 'Completed') {
-          setCompletedOrders(prev => prev.filter(o => o.id !== orderId));
-        } else if (selectedOrder?.status === 'Rejected') {
-          setRejectedOrders(prev => prev.filter(o => o.id !== orderId));
-        }
-        
-        // Add to the appropriate tab
-        if (newStatus === 'Approved') {
-          setApprovedOrders(prev => [updatedOrder, ...prev]);
-        } else if (newStatus === 'Completed') {
-          setCompletedOrders(prev => [updatedOrder, ...prev]);
-        } else if (newStatus === 'Rejected') {
-          setRejectedOrders(prev => [updatedOrder, ...prev]);
-        }
-        
         setSnackbar({
           open: true,
           message: `Order status changed to ${newStatus}`,
@@ -412,13 +487,11 @@ const ClientOrdersList: React.FC = () => {
         message: 'Failed to change order status. Please try again.',
         severity: 'error'
       });
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleRefresh = () => {
-    fetchOrders();
+    dispatch(fetchClientOrders());
   };
 
   const handleCloseSnackbar = () => {
@@ -450,7 +523,9 @@ const ClientOrdersList: React.FC = () => {
               <TableRow key={order.id}>
                 <TableCell>{order.order_id}</TableCell>
                 <TableCell>{order.clients?.name || `Client ${order.client_id}`}</TableCell>
-                <TableCell>{new Date(order.date).toLocaleDateString()}</TableCell>
+                <TableCell>
+                  {order.date ? new Date(order.date).toLocaleDateString() : 'N/A'}
+                </TableCell>
                 <TableCell>₱{order.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                 <TableCell>
                   <Chip 

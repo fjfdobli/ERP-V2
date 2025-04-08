@@ -1,7 +1,8 @@
 import { combineReducers } from '@reduxjs/toolkit';
 import authReducer from './slices/authSlice';
 import clientsReducer from './slices/clientsSlice';
-import ordersReducer from './slices/ordersSlice';
+import ordersReducer from './slices/clientOrdersSlice';
+import orderRequestReducer from './slices/orderRequestSlice';
 import inventoryReducer from './slices/inventorySlice';
 import employeesReducer from './slices/employeesSlice';
 import attendanceReducer from './slices/attendanceSlice';
@@ -13,6 +14,7 @@ const rootReducer = combineReducers({
   auth: authReducer,
   clients: clientsReducer,
   orders: ordersReducer,
+  orderRequest: orderRequestReducer,
   inventory: inventoryReducer,
   employees: employeesReducer,
   attendance: attendanceReducer,

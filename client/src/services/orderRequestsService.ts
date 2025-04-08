@@ -1,23 +1,8 @@
 import { supabase } from '../supabaseClient';
-import { clientOrdersService } from './clientOrdersService';
-
-export interface OrderRequest {
-  id: number;
-  request_id: string;
-  client_id: number;
-  date: string;
-  type: string;
-  status: string;
-  total_amount?: number;
-  notes?: string;
-  created_at: string;
-  updated_at?: string;
-  clients?: any;
-}
 
 export interface OrderRequestItem {
   id?: number;
-  order_request_id?: number;
+  request_id?: number;
   product_id: number;
   product_name: string;
   quantity: number;
@@ -26,525 +11,411 @@ export interface OrderRequestItem {
   serial_start?: string;
   serial_end?: string;
   created_at?: string;
+}
+
+export interface OrderRequest {
+  id: number;
+  request_id: string;
+  client_id: number;
+  date: string;
+  type: string;
+  status: string;
+  total_amount: number;
+  notes?: string;
+  created_at?: string;
   updated_at?: string;
 }
 
 export interface ExtendedOrderRequest extends OrderRequest {
   items?: OrderRequestItem[];
+  clients?: {
+    id: number;
+    name: string;
+    contactPerson: string;
+    status: string;
+  };
 }
 
-export type InsertOrderRequest = Omit<OrderRequest, 'id' | 'created_at' | 'updated_at' | 'clients'>;
-export type UpdateOrderRequest = Partial<InsertOrderRequest>;
-
 export const orderRequestsService = {
+  // Get all order requests with client details
   async getOrderRequests(): Promise<ExtendedOrderRequest[]> {
     try {
-      // Only get order requests with status New or Pending
-      const { data: orders, error } = await supabase
+      const { data: requests, error } = await supabase
         .from('order_requests')
-        .select('*, clients(*)')
-        .in('status', ['New', 'Pending'])
+        .select(`
+          *,
+          clients(id, name, "contactPerson", status)
+        `)
         .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching order requests:', error);
-        return [];
-      }
-      
-      if (!orders || orders.length === 0) {
-        return [];
-      }
-      
-      // Then get all items for these orders in a single query
-      const orderIds = orders.map(order => order.id);
+
+      if (error) throw error;
+
+      // Get all items for all requests
       const { data: allItems, error: itemsError } = await supabase
         .from('order_request_items')
-        .select('*')
-        .in('order_request_id', orderIds);
-      
-      if (itemsError) {
-        console.error('Error fetching order items:', itemsError);
-        return orders.map(order => ({
-          ...order,
-          items: []
-        }));
-      }
-      
-      // Match items to their respective orders
-      const ordersWithItems = orders.map(order => {
-        const items = allItems ? allItems.filter(item => item.order_request_id === order.id) : [];
+        .select('*');
+
+      if (itemsError) throw itemsError;
+
+      // Map items to their respective requests
+      const extendedRequests = requests.map((request: any) => {
+        const requestItems = allItems.filter((item: any) => item.request_id === request.id);
         return {
-          ...order,
-          items
+          ...request,
+          items: requestItems
         };
       });
-      
-      return ordersWithItems;
+
+      return extendedRequests;
     } catch (error) {
-      console.error('Unexpected error in getOrderRequests:', error);
-      return [];
+      console.error('Error fetching order requests:', error);
+      throw error;
     }
   },
-  
-  async getAllOrderRequests(): Promise<ExtendedOrderRequest[]> {
-    try {
-      // Get all order requests regardless of status (for admin purposes)
-      const { data: orders, error } = await supabase
-        .from('order_requests')
-        .select('*, clients(*)')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching all order requests:', error);
-        return [];
-      }
-      
-      if (!orders || orders.length === 0) {
-        return [];
-      }
-      
-      // Then get all items for these orders in a single query
-      const orderIds = orders.map(order => order.id);
-      const { data: allItems, error: itemsError } = await supabase
-        .from('order_request_items')
-        .select('*')
-        .in('order_request_id', orderIds);
-      
-      if (itemsError) {
-        console.error('Error fetching order items:', itemsError);
-        return orders.map(order => ({
-          ...order,
-          items: []
-        }));
-      }
-      
-      // Match items to their respective orders
-      const ordersWithItems = orders.map(order => {
-        const items = allItems ? allItems.filter(item => item.order_request_id === order.id) : [];
-        return {
-          ...order,
-          items
-        };
-      });
-      
-      return ordersWithItems;
-    } catch (error) {
-      console.error('Unexpected error in getAllOrderRequests:', error);
-      return [];
-    }
-  },
-  
+
+  // Get a single order request with all items
   async getOrderRequestById(id: number): Promise<ExtendedOrderRequest | null> {
     try {
-      // First get the order request
-      const { data: order, error } = await supabase
+      const { data: request, error } = await supabase
         .from('order_requests')
-        .select('*, clients(*)')
+        .select(`
+          *,
+          clients(id, name, "contactPerson", status)
+        `)
         .eq('id', id)
         .single();
-      
-      if (error) {
-        console.error(`Error fetching order request with ID ${id}:`, error);
-        return null;
-      }
-      
-      // Then get its items
+
+      if (error) throw error;
+      if (!request) return null;
+
+      // Get items for this request
       const { data: items, error: itemsError } = await supabase
         .from('order_request_items')
         .select('*')
-        .eq('order_request_id', id)
-        .order('id');
-      
-      if (itemsError) {
-        console.error(`Error fetching items for order request with ID ${id}:`, itemsError);
-        return {
-          ...order,
-          items: []
-        };
-      }
-      
+        .eq('request_id', id);
+
+      if (itemsError) throw itemsError;
+
+      console.log(`Found ${items?.length || 0} items for request ${id}`);
+
       return {
-        ...order,
+        ...request,
         items: items || []
       };
     } catch (error) {
-      console.error(`Unexpected error in getOrderRequestById:`, error);
-      return null;
-    }
-  },
-  
-  async createOrderRequest(orderRequest: InsertOrderRequest): Promise<OrderRequest> {
-    try {
-      const { data, error } = await supabase
-        .from('order_requests')
-        .insert([orderRequest])
-        .select();
-      
-      if (error) {
-        console.error('Error creating order request:', error);
-        throw error;
-      }
-      
-      return data?.[0];
-    } catch (error) {
-      console.error('Unexpected error in createOrderRequest:', error);
+      console.error(`Error fetching order request with ID ${id}:`, error);
       throw error;
     }
   },
-  
-  async createOrderRequestWithItems(
-    orderRequest: InsertOrderRequest,
-    items: OrderRequestItem[]
+
+  // Create a new order request with items
+  async createOrderRequest(
+    orderRequest: Omit<OrderRequest, 'id' | 'created_at' | 'updated_at'>,
+    items: Omit<OrderRequestItem, 'id' | 'request_id' | 'created_at'>[]
   ): Promise<ExtendedOrderRequest> {
     try {
-      const { data: order, error } = await supabase
-        .from('order_requests')
-        .insert([{
-          request_id: orderRequest.request_id,
-          client_id: orderRequest.client_id,
-          date: orderRequest.date,
-          type: orderRequest.type,
-          status: orderRequest.status,
-          total_amount: items.reduce((sum, item) => sum + item.total_price, 0),
-          notes: orderRequest.notes || ''
-        }])
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error creating order request:', error);
-        throw error;
-      }
-
-      if (!order) {
-        throw new Error('Failed to create order request');
-      }
-
-      // Now insert all items
-      if (items.length > 0) {
-        const itemsToInsert = items.map(item => ({
-          order_request_id: order.id,
-          product_id: item.product_id,
-          product_name: item.product_name,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          total_price: item.total_price,
-          serial_start: item.serial_start || null,
-          serial_end: item.serial_end || null
-        }));
-
-        const { error: itemsError } = await supabase
-          .from('order_request_items')
-          .insert(itemsToInsert);
-
-        if (itemsError) {
-          console.error('Error adding order items:', itemsError);
-          throw itemsError;
-        }
-      }
-
-      // Return the created order with items
-      return {
-        ...order,
-        items
-      };
-    } catch (error) {
-      console.error('Unexpected error in createOrderRequestWithItems:', error);
-      throw error;
-    }
-  },
-  
-  async updateOrderRequest(id: number, updates: UpdateOrderRequest): Promise<OrderRequest> {
-    try {
-      // Include updated_at timestamp
-      const updatedData = {
-        ...updates,
-        updated_at: new Date().toISOString()
-      };
-      
-      const { data, error } = await supabase
-        .from('order_requests')
-        .update(updatedData)
-        .eq('id', id)
-        .select();
-      
-      if (error) {
-        console.error(`Error updating order request with ID ${id}:`, error);
-        throw error;
-      }
-      
-      if (!data || data.length === 0) {
-        throw new Error(`No data returned after updating order request with ID ${id}`);
-      }
-      
-      return data[0];
-    } catch (error) {
-      console.error('Unexpected error in updateOrderRequest:', error);
-      throw error;
-    }
-  },
-  
-  async updateOrderRequestWithItems(
-    id: number, 
-    updates: UpdateOrderRequest, 
-    items: OrderRequestItem[]
-  ): Promise<ExtendedOrderRequest> {
-    try {
-      const { error: checkError } = await supabase
-        .from('order_requests')
-        .select('id')
-        .eq('id', id)
-        .single();
-        
-      if (checkError) {
-        console.error(`Error checking order request with ID ${id}:`, checkError);
-        throw new Error(`Order request with ID ${id} not found`);
-      }
-      
-      // Calculate total amount
+      // Calculate total amount from items
       const totalAmount = items.reduce((sum, item) => sum + item.total_price, 0);
-      
-      // Include updated_at timestamp
-      const updatedData = {
-        ...updates,
-        total_amount: totalAmount,
-        updated_at: new Date().toISOString()
+      const requestToCreate = {
+        ...orderRequest,
+        total_amount: totalAmount
       };
-      
-      // Update the order request
-      const { data: order, error } = await supabase
+
+      // Insert the order request
+      const { data: createdRequest, error } = await supabase
         .from('order_requests')
-        .update(updatedData)
+        .insert(requestToCreate)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Insert all items with the new request ID
+      const itemsWithRequestId = items.map(item => ({
+        ...item,
+        request_id: createdRequest.id
+      }));
+
+      const { data: createdItems, error: itemsError } = await supabase
+        .from('order_request_items')
+        .insert(itemsWithRequestId)
+        .select();
+
+      if (itemsError) throw itemsError;
+      
+      console.log(`Created order request with ${createdItems?.length} items`);
+      
+      // Add history record for the creation
+      await this.addOrderRequestHistory(
+        createdRequest.id, 
+        'Created', 
+        'New order request created', 
+        'System'
+      );
+
+      return {
+        ...createdRequest,
+        items: createdItems
+      };
+    } catch (error) {
+      console.error('Error creating order request:', error);
+      throw error;
+    }
+  },
+
+  // Update an existing order request and its items
+  async updateOrderRequest(
+    id: number,
+    orderRequest: Partial<OrderRequest>,
+    items: OrderRequestItem[]
+  ): Promise<ExtendedOrderRequest> {
+    try {
+      // Calculate total amount from items if not provided
+      if (!orderRequest.total_amount) {
+        orderRequest.total_amount = items.reduce((sum, item) => sum + item.total_price, 0);
+      }
+
+      // Update order request
+      const { data: updatedRequest, error } = await supabase
+        .from('order_requests')
+        .update({ ...orderRequest, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select()
         .single();
 
-      if (error) {
-        console.error(`Error updating order request with ID ${id}:`, error);
-        throw error;
-      }
+      if (error) throw error;
 
-      if (!order) {
-        throw new Error(`Failed to update order request with ID ${id}`);
-      }
+      // Delete existing items
+      const { error: deleteError } = await supabase
+        .from('order_request_items')
+        .delete()
+        .eq('request_id', id);
 
-      try {
-        // Delete existing items first
-        const { error: deleteError } = await supabase
-          .from('order_request_items')
-          .delete()
-          .eq('order_request_id', id);
+      if (deleteError) throw deleteError;
 
-        if (deleteError) {
-          console.error(`Error deleting existing items for order request with ID ${id}:`, deleteError);
-          throw deleteError;
-        }
-        
-        // Only insert new items if there are any
-        if (items && items.length > 0) {
-          // Prepare items with order_request_id
-          const itemsToInsert = items.map(item => ({
-            order_request_id: id,
-            product_id: item.product_id,
-            product_name: item.product_name,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            total_price: item.total_price,
-            serial_start: item.serial_start || null,
-            serial_end: item.serial_end || null
-          }));
+      // Insert new items
+      const itemsWithRequestId = items.map(item => ({
+        ...item,
+        request_id: id
+      }));
 
-          // Insert new items
-          const { error: itemsError } = await supabase
-            .from('order_request_items')
-            .insert(itemsToInsert);
+      const { data: updatedItems, error: itemsError } = await supabase
+        .from('order_request_items')
+        .insert(itemsWithRequestId)
+        .select();
 
-          if (itemsError) {
-            console.error(`Error adding updated items for order request with ID ${id}:`, itemsError);
-            throw itemsError;
-          }
-        }
-      } catch (itemError) {
-        console.error(`Error managing items for order request with ID ${id}:`, itemError);
-        // Continue and return the order without items rather than failing completely
-      }
+      if (itemsError) throw itemsError;
+      
+      console.log(`Updated order request ${id} with ${updatedItems?.length} items`);
+      
+      // Add history record for the update
+      await this.addOrderRequestHistory(
+        id, 
+        'Updated', 
+        'Order request updated with new items', 
+        'System'
+      );
 
-      // Return the updated order with items
       return {
-        ...order,
-        items: items || []
+        ...updatedRequest,
+        items: updatedItems
       };
     } catch (error) {
-      console.error('Unexpected error in updateOrderRequestWithItems:', error);
+      console.error(`Error updating order request with ID ${id}:`, error);
       throw error;
     }
   },
   
-  async changeRequestStatus(id: number, status: string): Promise<OrderRequest> {
+  // Add history tracking
+  async addOrderRequestHistory(requestId: number, status: string, notes?: string, changedBy?: string): Promise<void> {
     try {
-      console.log(`Changing request status for ID ${id} to ${status}`);
-      
-      // First get the full order request with items
-      const orderRequest = await this.getOrderRequestById(id);
-      
-      if (!orderRequest) {
-        console.error(`Order request with ID ${id} not found`);
-        throw new Error(`Order request with ID ${id} not found`);
+      await supabase
+        .from('order_history')
+        .insert({
+          request_id: requestId,
+          status: status,
+          notes: notes || `Status changed to ${status}`,
+          changed_by: changedBy || 'System'
+        });
+    } catch (error) {
+      console.error(`Error adding history for order request ${requestId}:`, error);
+      // Don't throw the error to prevent blocking the main operation
+    }
+  },
+  
+  // Get order history
+  async getOrderHistory(requestId?: number, orderId?: number): Promise<any[]> {
+    try {
+      let query = supabase
+        .from('order_history')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (requestId) {
+        query = query.eq('request_id', requestId);
+      } else if (orderId) {
+        query = query.eq('order_id', orderId);
+      } else {
+        return [];
       }
       
-      // Update the status with timestamp
-      const { data, error } = await supabase
+      const { data, error } = await query;
+      
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching order history:', error);
+      return [];
+    }
+  },
+
+  // Change order request status
+  async changeOrderRequestStatus(id: number, status: string, changedBy?: string): Promise<OrderRequest> {
+    try {
+      console.log(`Changing request ${id} status to ${status}`);
+      
+      // Check if we're approving or rejecting - if so, we need to create a client order
+      if (status === 'Approved' || status === 'Rejected') {
+        // Get full order request with items
+        const orderRequest = await this.getOrderRequestById(id);
+        if (!orderRequest) throw new Error(`Order request with ID ${id} not found`);
+        
+        console.log(`Request has ${orderRequest.items?.length || 0} items`);
+
+        // Check if a client order already exists for this request
+        const { data: existingOrder, error: checkError } = await supabase
+          .from('client_orders')
+          .select('id')
+          .eq('request_id', id)
+          .maybeSingle();
+          
+        if (checkError) throw checkError;
+        
+        let clientOrderId;
+        
+        if (!existingOrder) {
+          console.log(`No existing client order for request ${id}, creating new one`);
+          
+          // Create client order if status is changing to approved or rejected
+          const { data: clientOrder, error: orderError } = await supabase
+            .from('client_orders')
+            .insert({
+              order_id: `CO-${Date.now()}`, // Generate a unique order ID
+              client_id: orderRequest.client_id,
+              date: orderRequest.date,
+              amount: orderRequest.total_amount,
+              status: status,
+              notes: orderRequest.notes,
+              request_id: id
+            })
+            .select()
+            .single();
+
+          if (orderError) throw orderError;
+          
+          clientOrderId = clientOrder.id;
+
+          // Create client order items
+          if (orderRequest.items && orderRequest.items.length > 0) {
+            const orderItems = orderRequest.items.map(item => ({
+              order_id: clientOrder.id,
+              product_id: item.product_id,
+              product_name: item.product_name,
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+              total_price: item.total_price,
+              serial_start: item.serial_start,
+              serial_end: item.serial_end
+            }));
+            
+            console.log(`Adding ${orderItems.length} items to new client order`);
+
+            const { error: itemsError } = await supabase
+              .from('client_order_items')
+              .insert(orderItems);
+
+            if (itemsError) throw itemsError;
+          }
+        } else {
+          console.log(`Found existing client order ${existingOrder.id} for request ${id}, updating status`);
+          
+          clientOrderId = existingOrder.id;
+          
+          // Just update the status of the existing order
+          const { error: updateError } = await supabase
+            .from('client_orders')
+            .update({ 
+              status, 
+              updated_at: new Date().toISOString() 
+            })
+            .eq('id', existingOrder.id);
+            
+          if (updateError) throw updateError;
+        }
+        
+        // Add history record for the client order creation/update
+        await supabase
+          .from('order_history')
+          .insert({
+            order_id: clientOrderId,
+            status: status,
+            notes: `Order ${status.toLowerCase()} from request ${orderRequest.request_id}`,
+            changed_by: changedBy || 'System'
+          });
+      }
+
+      // Update order request status
+      const { data: updatedRequest, error } = await supabase
         .from('order_requests')
         .update({ 
           status: status,
           updated_at: new Date().toISOString()
         })
         .eq('id', id)
-        .select();
+        .select()
+        .single();
+
+      if (error) throw error;
       
-      if (error) {
-        console.error(`Error changing status for order request with ID ${id}:`, error);
-        throw error;
-      }
-      
-      if (!data || data.length === 0) {
-        console.error(`No data returned after updating status for order request with ID ${id}`);
-        throw new Error(`No data returned after updating status for order request with ID ${id}`);
-      }
-      
-      // If status is Approved or Rejected, create an entry in client_orders
-      if (status === 'Approved' || status === 'Rejected' || status === 'Completed') {
-        try {
-          console.log(`Creating client order entry for order request ${id} with status ${status}`);
-          
-          // Check if an entry already exists
-          const { data: existingOrder, error: checkError } = await supabase
-            .from('client_orders')
-            .select('id')
-            .eq('order_request_id', id)
-            .single();
-            
-          if (!checkError && existingOrder) {
-            console.log(`Client order already exists for order request ${id}, updating status`);
-            
-            // If entry exists, just update the status
-            await supabase
-              .from('client_orders')
-              .update({ 
-                status: status,
-                updated_at: new Date().toISOString()
-              })
-              .eq('order_request_id', id);
-          } else {
-            // Create new client order
-            await clientOrdersService.createClientOrder({
-              order_id: orderRequest.request_id,
-              client_id: orderRequest.client_id,
-              date: orderRequest.date,
-              amount: orderRequest.total_amount || 0,
-              status: status,
-              // Remove the order_type property as it does not exist in InsertClientOrder
-              notes: orderRequest.notes || '',
-              order_request_id: orderRequest.id
-            });
-          }
-        } catch (clientOrderError) {
-          console.error('Error creating or updating client order:', clientOrderError);
-          // Still return success for the status change
-        }
-      } else if (status === 'Pending' || status === 'New') {
-        // If status is back to Pending or New, remove from client_orders if it exists
-        try {
-          console.log(`Removing client order for order request ${id} as status is now ${status}`);
-          
-          const { error: deleteError } = await supabase
-            .from('client_orders')
-            .delete()
-            .eq('order_request_id', id);
-            
-          if (deleteError) {
-            console.warn(`Could not delete client order for order request ${id}:`, deleteError);
-          }
-        } catch (deleteError) {
-          console.warn('Error attempting to delete client order:', deleteError);
-        }
-      }
-      
-      console.log(`Successfully changed order request ${id} status to ${status}`);
-      return data[0];
+      // Add history record for the request status change
+      await this.addOrderRequestHistory(id, status, `Status changed to ${status}`, changedBy);
+
+      return updatedRequest;
     } catch (error) {
-      console.error('Unexpected error in changeRequestStatus:', error);
+      console.error(`Error changing status for order request with ID ${id}:`, error);
       throw error;
     }
   },
-  
-  async generateRequestId(): Promise<string> {
+
+  // Delete an order request and its items
+  async deleteOrderRequest(id: number): Promise<void> {
     try {
-      const year = new Date().getFullYear();
-      const prefix = `REQ-${year}-`;
-      
-      const { data, error } = await supabase
-        .from('order_requests')
-        .select('request_id')
-        .like('request_id', `${prefix}%`)
-        .order('request_id', { ascending: false })
-        .limit(1);
-      
-      if (error) {
-        console.error('Error generating request ID:', error);
-        return `${prefix}00001`;
-      }
-      
-      let nextNumber = 1;
-      if (data && data.length > 0) {
-        const lastRequestId = data[0].request_id;
-        const lastNumber = parseInt(lastRequestId.substring(prefix.length));
-        nextNumber = lastNumber + 1;
-      }
-      
-      return `${prefix}${nextNumber.toString().padStart(5, '0')}`;
-    } catch (error) {
-      console.error('Unexpected error in generateRequestId:', error);
-      const year = new Date().getFullYear();
-      const prefix = `REQ-${year}-`;
-      return `${prefix}00001`;
-    }
-  },
-  
-  async getOrderRequestItems(orderRequestId: number): Promise<OrderRequestItem[]> {
-    try {
-      const { data, error } = await supabase
-        .from('order_request_items')
-        .select('*')
-        .eq('order_request_id', orderRequestId)
-        .order('id');
-      
-      if (error) {
-        console.error(`Error fetching items for order request ID ${orderRequestId}:`, error);
-        return [];
-      }
-      
-      return data || [];
-    } catch (error) {
-      console.error(`Unexpected error in getOrderRequestItems:`, error);
-      return [];
-    }
-  },
-  
-  async deleteOrderRequestItem(itemId: number): Promise<void> {
-    try {
-      const { error } = await supabase
+      // Delete order request items first (should cascade, but to be safe)
+      const { error: itemsError } = await supabase
         .from('order_request_items')
         .delete()
-        .eq('id', itemId);
-      
-      if (error) {
-        console.error(`Error deleting order request item with ID ${itemId}:`, error);
-        throw error;
-      }
+        .eq('request_id', id);
+
+      if (itemsError) throw itemsError;
+
+      // Delete order request
+      const { error } = await supabase
+        .from('order_requests')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
     } catch (error) {
-      console.error('Unexpected error in deleteOrderRequestItem:', error);
+      console.error(`Error deleting order request with ID ${id}:`, error);
       throw error;
     }
+  },
+
+  // Generate a new unique request ID
+  async generateRequestId(): Promise<string> {
+    const prefix = 'REQ-';
+    const timestamp = Date.now().toString().slice(-6); // Last 6 digits of timestamp
+    const randomDigits = Math.floor(Math.random() * 10000).toString().padStart(4, '0'); // 4 random digits
+    return `${prefix}${timestamp}-${randomDigits}`;
   }
 };

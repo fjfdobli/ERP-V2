@@ -13,8 +13,8 @@ const menuItems = [
   { text: 'Orders', 
     icon: <OrdersIcon />, 
     children: [
-      { text: 'Client Orders', icon: <ClientRequestIcon />, path: '/orders/clients' },
-      { text: 'Order Requests', icon: <RequestIcon />, path: '/orders/requests' }
+      { text: 'Order Requests', icon: <RequestIcon />, path: '/orders/requests' },
+      { text: 'Client Orders', icon: <ClientRequestIcon />, path: '/orders/clients' }
     ]
   },
   { text: 'Suppliers', icon: <SuppliersIcon />, path: '/suppliers' },

@@ -1,9 +1,21 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, Chip, Dialog, DialogTitle, DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem, CircularProgress, Snackbar, Alert, Grid, IconButton, SelectChangeEvent } from '@mui/material';
 import { Add as AddIcon, Search as SearchIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { Client, clientsService } from '../../services/clientsService';
 import { OrderRequestItem, ExtendedOrderRequest } from '../../services/orderRequestsService';
 import { orderRequestsService } from '../../services/orderRequestsService';
+import { 
+  fetchOrderRequests, 
+  createOrderRequest, 
+  updateOrderRequest, 
+  changeOrderRequestStatus,
+  selectOrderRequests,
+  selectOrderRequestLoading,
+  selectOrderRequestError 
+} from '../../redux/slices/orderRequestSlice';
+import { selectAllClientOrders } from '../../redux/slices/clientOrdersSlice';
+import { AppDispatch, RootState } from '../../redux/store';
 
 interface Product {
   id: number;
@@ -43,6 +55,8 @@ interface OrderRequestFormProps {
   products: Product[];
   initialData?: ExtendedOrderRequest | null;
   isEdit?: boolean;
+  clientsWithOrders: Set<number>;
+  getClientOrderStatus: (clientId: number) => { hasOngoingOrders: boolean, statusText: string };
 }
 
 const StatusChip: React.FC<{ status: string }> = ({ status }) => {
@@ -74,7 +88,17 @@ const StatusChip: React.FC<{ status: string }> = ({ status }) => {
   );
 };
 
-const OrderRequestForm: React.FC<OrderRequestFormProps> = ({ open, onClose, onSubmit, clients, products, initialData = null, isEdit = false }) => {
+const OrderRequestForm: React.FC<OrderRequestFormProps> = ({ 
+  open, 
+  onClose, 
+  onSubmit, 
+  clients, 
+  products, 
+  initialData = null, 
+  isEdit = false, 
+  clientsWithOrders,
+  getClientOrderStatus
+}) => {
   const [clientId, setClientId] = useState<number>(initialData?.client_id || 0);
   const [items, setItems] = useState<OrderRequestItem[]>(initialData?.items || []);
   const [notes, setNotes] = useState<string>(initialData?.notes || '');
@@ -238,7 +262,7 @@ const OrderRequestForm: React.FC<OrderRequestFormProps> = ({ open, onClose, onSu
       notes,
       total_amount: calculateTotal(),
       type: items.length > 0 ? items[0].product_name : 'Other',
-      status: initialData?.status || 'New',
+      status: initialData?.status || 'Pending', // Set initial status to Pending instead of New
       date: initialData?.date || new Date().toISOString().split('T')[0]
     };
     
@@ -268,23 +292,30 @@ const OrderRequestForm: React.FC<OrderRequestFormProps> = ({ open, onClose, onSu
                 .filter(client => {
                   // In edit mode, show the current client even if inactive
                   // In create mode, only show active clients
-                  return client.status !== 'Inactive' || (isEdit && client.id === clientId);
+                  return (isEdit && client.id === clientId) || 
+                         (client.status !== 'Inactive' && (!clientsWithOrders.has(client.id) || client.id === initialData?.client_id));
                 })
-                .map((client) => (
-                  <MenuItem 
-                    key={client.id} 
-                    value={client.id}
-                    disabled={client.status === 'Inactive'}
-                    sx={{
-                      opacity: client.status === 'Inactive' ? 0.5 : 1,
-                      '&.Mui-disabled': {
-                        opacity: 0.5,
-                      }
-                    }}
-                  >
-                    {client.name} {client.status === 'Inactive' ? '(Inactive)' : ''}
-                  </MenuItem>
-                ))}
+                .map((client) => {
+                  const clientStatus = getClientOrderStatus(client.id);
+                  return (
+                    <MenuItem 
+                      key={client.id} 
+                      value={client.id}
+                      disabled={client.status === 'Inactive' || (!isEdit && clientStatus.hasOngoingOrders)}
+                      sx={{
+                        opacity: client.status === 'Inactive' || clientStatus.hasOngoingOrders ? 0.5 : 1,
+                        '&.Mui-disabled': {
+                          opacity: 0.5,
+                        }
+                      }}
+                    >
+                      {client.name} 
+                      {client.status === 'Inactive' && ' (Inactive)'}
+                      {client.status !== 'Inactive' && clientStatus.hasOngoingOrders && ` (${clientStatus.statusText})`}
+                      {client.status !== 'Inactive' && !clientStatus.hasOngoingOrders && clientStatus.statusText && ` (${clientStatus.statusText})`}
+                    </MenuItem>
+                  );
+                })}
             </Select>
           </FormControl>
         </Box>
@@ -521,11 +552,18 @@ const OrderRequestForm: React.FC<OrderRequestFormProps> = ({ open, onClose, onSu
   );
 };
 
+// Main component for order requests list
 const OrderRequestsList: React.FC = () => {
-  const [orderRequests, setOrderRequests] = useState<ExtendedOrderRequest[]>([]);
+  // Use Redux instead of local state
+  const dispatch = useDispatch<AppDispatch>();
+  const orderRequests = useSelector(selectOrderRequests);
+  const isLoading = useSelector(selectOrderRequestLoading);
+  const reduxError = useSelector(selectOrderRequestError);
+  const clientOrders = useSelector(selectAllClientOrders); // Get client orders properly
+  
+  // Local state for UI
   const [clients, setClients] = useState<Client[]>([]);
   const [products] = useState<Product[]>(printingProducts);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [currentRequest, setCurrentRequest] = useState<ExtendedOrderRequest | null>(null);
@@ -533,21 +571,88 @@ const OrderRequestsList: React.FC = () => {
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'info'>('success');
+  const [requestHistory, setRequestHistory] = useState<any[]>([]);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState<boolean>(false);
   
   const clientsWithOrders = useMemo(() => {
     const clientIds = new Set<number>();
+    
+    // Only restrict clients that have Pending or Approved order requests
     orderRequests.forEach(request => {
-      if (request.client_id > 0) { 
+      if (request.client_id > 0 && 
+          (request.status === 'Pending' || request.status === 'Approved')) { 
         clientIds.add(request.client_id);
       }
     });
+    
+    // Only restrict clients with Approved orders (not with Completed or Rejected)
+    clientOrders.forEach(order => {
+      // If an order is Approved (not Completed or Rejected), the client cannot make new requests
+      if (order.client_id > 0 && order.status === 'Approved') {
+        clientIds.add(order.client_id);
+      }
+      // Clients with Completed or Rejected orders can make new requests
+      // So we don't add them to clientIds
+    });
+    
     return clientIds;
-  }, [orderRequests]);
+  }, [orderRequests, clientOrders]);
   
   const availableClients = useMemo(() => {
     return clients.filter(client => !clientsWithOrders.has(client.id) && client.status !== 'Inactive');
   }, [clients, clientsWithOrders]);
+
+  // Helper function to get client order status
+  const getClientOrderStatus = (clientId: number): { hasOngoingOrders: boolean, statusText: string } => {
+    // Check for pending or approved requests
+    const hasPendingRequest = orderRequests.some(
+      req => req.client_id === clientId && 
+             (req.status === 'Pending' || req.status === 'Approved')
+    );
+    
+    // Check for approved orders
+    const hasApprovedOrder = clientOrders.some(
+      order => order.client_id === clientId && order.status === 'Approved'
+    );
+    
+    // Check for completed orders (for informational purposes)
+    const hasCompletedOrder = clientOrders.some(
+      order => order.client_id === clientId && order.status === 'Completed'
+    );
+    
+    // Check for rejected orders
+    const hasRejectedOrder = clientOrders.some(
+      order => order.client_id === clientId && order.status === 'Rejected'
+    );
+    
+    if (hasPendingRequest) {
+      return { 
+        hasOngoingOrders: true, 
+        statusText: 'Has pending request' 
+      };
+    } else if (hasApprovedOrder) {
+      return { 
+        hasOngoingOrders: true, 
+        statusText: 'Has approved order' 
+      };
+    } else if (hasCompletedOrder) {
+      return { 
+        hasOngoingOrders: false, 
+        statusText: 'Has completed orders (can place new orders)' 
+      };
+    } else if (hasRejectedOrder) {
+      return { 
+        hasOngoingOrders: false, 
+        statusText: 'Has rejected orders (can place new orders)' 
+      };
+    } else {
+      return { 
+        hasOngoingOrders: false, 
+        statusText: 'No active orders' 
+      };
+    }
+  };
 
   const isClientInactive = (clientId: number): boolean => {
     const client = clients.find(c => c.id === clientId);
@@ -555,45 +660,40 @@ const OrderRequestsList: React.FC = () => {
   };
 
   useEffect(() => {
+    // Fetch data on component mount
     const fetchData = async () => {
-      setIsLoading(true);
       try {
-        const [requestsData, fetchedClients] = await Promise.allSettled([
-          orderRequestsService.getOrderRequests(),
-          clientsService.getClients()
-        ]);
+        // Fetch clients from service
+        const fetchedClients = await clientsService.getClients();
+        setClients(fetchedClients);
         
-        if (requestsData.status === 'fulfilled' && requestsData.value) {
-          const extendedRequests: ExtendedOrderRequest[] = requestsData.value.map(req => ({
-            ...req,
-            items: req.items || [],
-            notes: req.notes || ''
-          }));
-          
-          setOrderRequests(extendedRequests);
-        } else {
-          console.error('Error fetching order requests:', requestsData.status === 'rejected' ? requestsData.reason : 'No data returned');
-          setOrderRequests([]);
-        }
-
-        if (fetchedClients.status === 'fulfilled' && fetchedClients.value) {
-          setClients(fetchedClients.value);
-        } else {
-          console.error('Error fetching clients:', fetchedClients.status === 'rejected' ? fetchedClients.reason : 'No data returned');
-          setClients([]);
-        }
-        
+        // Fetch order requests from Redux
+        dispatch(fetchOrderRequests());
       } catch (error) {
-        console.error('Error fetching data:', error);
-        setOrderRequests([]);
+        console.error('Error fetching clients:', error);
         setClients([]);
-      } finally {
-        setIsLoading(false);
+        setSnackbarMessage('Error fetching clients');
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
       }
     };
     
     fetchData();
-  }, []);  
+  }, [dispatch]);  
+
+  // Add function to fetch order history
+  const fetchOrderHistory = async (requestId: number) => {
+    try {
+      const history = await orderRequestsService.getOrderHistory(requestId);
+      setRequestHistory(history);
+      setHistoryDialogOpen(true);
+    } catch (error) {
+      console.error('Error fetching order history:', error);
+      setSnackbarMessage('Error fetching order history');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    }
+  };
 
   const filteredRequests = orderRequests.filter(request => {
     if (!searchTerm.trim()) return true;
@@ -614,17 +714,33 @@ const OrderRequestsList: React.FC = () => {
 
   const handleOpenCreateForm = async () => {
     try {
-      setIsLoading(true);
-
-      const activeAvailableClients = availableClients.filter(client => client.status !== 'Inactive');
+      const activeAvailableClients = clients.filter(client => 
+        client.status === 'Active' && !clientsWithOrders.has(client.id)
+      );
 
       if (activeAvailableClients.length === 0) {
-        setSnackbarMessage('All active clients already have orders. Please add new clients or activate existing ones to create more orders.');
-        setSnackbarSeverity('error');
+        // Provide a more informative message about client eligibility
+        const clientsWithOngoingTransactions = clients.filter(client => 
+          client.status === 'Active' && clientsWithOrders.has(client.id)
+        );
+        
+        let message = 'All active clients already have pending or approved orders. ';
+        
+        if (clientsWithOngoingTransactions.length > 0) {
+          message += 'The following clients have ongoing transactions and cannot create new orders: ';
+          message += clientsWithOngoingTransactions.map(c => c.name).join(', ') + '. ';
+          message += 'Complete or reject their current orders to allow new order requests.';
+        } else {
+          message += 'Please add new clients or activate existing ones to create more orders.';
+        }
+        
+        setSnackbarMessage(message);
+        setSnackbarSeverity('info');
         setSnackbarOpen(true);
         return;
       }
       
+      // Use your service to generate a request ID
       const newRequestId = await orderRequestsService.generateRequestId();
       
       setCurrentRequest({
@@ -633,10 +749,11 @@ const OrderRequestsList: React.FC = () => {
         client_id: activeAvailableClients.length > 0 ? activeAvailableClients[0].id : 0,
         date: new Date().toISOString().split('T')[0],
         type: '',
-        status: 'New',
+        status: 'Pending',
         created_at: new Date().toISOString(),
         items: [],
-        notes: ''
+        notes: '',
+        total_amount: 0 
       });
       setFormOpen(true);
     } catch (error) {
@@ -644,8 +761,6 @@ const OrderRequestsList: React.FC = () => {
       setSnackbarMessage('Error generating request ID');
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -657,39 +772,12 @@ const OrderRequestsList: React.FC = () => {
       return;
     }
     
-    try {
-      setIsLoading(true);
-      const requestWithItems = await orderRequestsService.getOrderRequestById(request.id);
-      
-      if (requestWithItems) {
-        setCurrentRequest({
-          ...requestWithItems,
-          notes: requestWithItems.notes || ''
-        });
-      } else {
-        setCurrentRequest({
-          ...request,
-          items: request.items || [],
-          notes: request.notes || ''
-        });
-      }
-      
-      setFormOpen(true);
-    } catch (error) {
-      console.error('Error fetching order items:', error);
-      setCurrentRequest({
-        ...request,
-        items: request.items || [],
-        notes: request.notes || ''
-      });
-      setFormOpen(true);
-      
-      setSnackbarMessage('Warning: Some order data may not be complete');
-      setSnackbarSeverity('error');
-      setSnackbarOpen(true);
-    } finally {
-      setIsLoading(false);
-    }
+    setCurrentRequest({
+      ...request,
+      items: request.items || [],
+      notes: request.notes || ''
+    });
+    setFormOpen(true);
   };
   
   const isEdit = !!currentRequest?.id;
@@ -699,7 +787,8 @@ const OrderRequestsList: React.FC = () => {
     setCurrentRequest(null);
   };
 
-  const handleOpenStatusDialog = (requestId: number) => {
+  // Update the handleOpenStatusDialog function to also fetch history
+  const handleOpenStatusDialog = async (requestId: number) => {
     const request = orderRequests.find(r => r.id === requestId);
     if (request && isClientInactive(request.client_id)) {
       setSnackbarMessage('Cannot change status for order with inactive client');
@@ -717,27 +806,29 @@ const OrderRequestsList: React.FC = () => {
     setSelectedRequestId(null);
   };
 
+  // Update the handleChangeStatus function to pass the changed_by parameter
   const handleChangeStatus = async (status: string) => {
     if (selectedRequestId) {
       try {
-        setIsLoading(true);
-        await orderRequestsService.changeRequestStatus(selectedRequestId, status);
+        // Use Redux action to change status
+        await dispatch(changeOrderRequestStatus({ 
+          id: selectedRequestId, 
+          status,
+          changedBy: 'Admin' // Or use the actual user name/role
+        })).unwrap();
         
-        setOrderRequests(prev => 
-          prev.map(req => 
-            req.id === selectedRequestId ? { ...req, status } : req
-          )
-        );
+        // When status is Approved or Rejected, it will be moved to Client Orders and removed from here
+        // This is handled in the Redux thunk and backend logic
         
         setSnackbarMessage(`Request status updated to ${status}`);
         setSnackbarSeverity('success');
+        setSnackbarOpen(true);
       } catch (error) {
         console.error('Error updating status:', error);
         setSnackbarMessage('Error updating request status');
         setSnackbarSeverity('error');
-      } finally {
-        setIsLoading(false);
         setSnackbarOpen(true);
+      } finally {
         handleCloseStatusDialog();
       }
     }
@@ -745,8 +836,6 @@ const OrderRequestsList: React.FC = () => {
 
   const handleSubmitRequest = async (requestData: any) => {
     try {
-      setIsLoading(true);
-      
       const { client_id, items, notes, date, type, status } = requestData;
 
       if (isClientInactive(client_id)) {
@@ -754,57 +843,41 @@ const OrderRequestsList: React.FC = () => {
       }
       
       if (currentRequest && currentRequest.id) {
-        try {
-          const updatedRequest = await orderRequestsService.updateOrderRequestWithItems(
-            currentRequest.id,
-            { client_id, date, type, status, notes },
-            items
-          );
-          
-          setOrderRequests(prev => 
-            prev.map(req => 
-              req.id === currentRequest.id ? updatedRequest : req
-            )
-          );
-          
-          setSnackbarMessage('Request updated successfully');
-          setSnackbarSeverity('success');
-        } catch (updateError) {
-          console.error('Error updating request:', updateError);
-          throw new Error('Failed to update request. Please try again.');
-        }
+        // Update existing request
+        await dispatch(updateOrderRequest({
+          id: currentRequest.id,
+          orderRequest: { client_id, date, type, status, notes },
+          items
+        })).unwrap();
+        
+        setSnackbarMessage('Request updated successfully');
+        setSnackbarSeverity('success');
       } else {
-        try {
-          const newRequestId = await orderRequestsService.generateRequestId();
-          
-          const createdRequest = await orderRequestsService.createOrderRequestWithItems(
-            {
-              request_id: newRequestId,
-              client_id,
-              date,
-              type,
-              status: 'New',
-              notes
-            },
-            items
-          );
-          
-          setOrderRequests(prev => [createdRequest, ...prev]);
-          setSnackbarMessage('Request created successfully');
-          setSnackbarSeverity('success');
-        } catch (createError) {
-          console.error('Error creating request:', createError);
-          throw new Error('Failed to create request. Please try again.');
-        }
+        // Create new request
+        await dispatch(createOrderRequest({
+          orderRequest: {
+            request_id: requestData.request_id,
+            client_id,
+            date,
+            type,
+            status: 'Pending', // Always Pending for new requests
+            notes,
+            total_amount: 0 // This will be calculated in the service
+          },
+          items
+        })).unwrap();
+        
+        setSnackbarMessage('Request created successfully');
+        setSnackbarSeverity('success');
       }
-    } catch (error) {
-      console.error('Error submitting request:', error);
-      setSnackbarMessage(error instanceof Error ? error.message : 'Error submitting request');
-      setSnackbarSeverity('error');
-    } finally {
-      setIsLoading(false);
+      
       setSnackbarOpen(true);
       handleCloseForm();
+    } catch (error: any) {
+      console.error('Error submitting request:', error);
+      setSnackbarMessage(error.message || 'Error submitting request');
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
     }
   };
 
@@ -819,6 +892,81 @@ const OrderRequestsList: React.FC = () => {
   const getClientName = (clientId: number): string => {
     const client = clients.find(c => c.id === clientId);
     return client ? client.name : `Client ID: ${clientId}`;
+  };
+
+  // Helper function to get chip color based on status
+  const getChipColor = (status: string): 'success' | 'info' | 'warning' | 'error' | 'default' => {
+    switch (status.toLowerCase()) {
+      case 'approved':
+        return 'success';
+      case 'completed':
+        return 'info';
+      case 'created':
+        return 'info';
+      case 'updated':
+        return 'info';
+      case 'pending':
+        return 'warning';
+      case 'rejected':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
+
+  // Create a new OrderHistoryDialog component
+  const OrderHistoryDialog: React.FC<{
+    open: boolean;
+    onClose: () => void;
+    history: any[];
+    requestId: string;
+  }> = ({ open, onClose, history, requestId }) => {
+    return (
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+        <DialogTitle>Order History: {requestId}</DialogTitle>
+        <DialogContent>
+          {history.length === 0 ? (
+            <Typography variant="body1" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
+              No history available for this order request.
+            </Typography>
+          ) : (
+            <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Date</strong></TableCell>
+                    <TableCell><strong>Status</strong></TableCell>
+                    <TableCell><strong>Updated By</strong></TableCell>
+                    <TableCell><strong>Notes</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {history.map((entry, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        {entry.created_at ? new Date(entry.created_at).toLocaleString() : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={entry.status} 
+                          color={getChipColor(entry.status)}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>{entry.changed_by || 'System'}</TableCell>
+                      <TableCell>{entry.notes || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    );
   };
 
   return (
@@ -877,65 +1025,77 @@ const OrderRequestsList: React.FC = () => {
               {filteredRequests.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} align="center">
-                    No requests found
+                    {isLoading ? 'Loading requests...' : 'No requests found'}
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredRequests.map((request) => {
-                  const totalAmount = request.total_amount || (request.items 
-                    ? request.items.reduce((sum, item) => sum + item.total_price, 0)
-                    : 0);
+                // Filter out Approved and Rejected requests that have been moved to Client Orders
+                filteredRequests
+                  .filter(request => request.status === 'Pending' || request.status === 'New')
+                  .map((request) => {
+                    const totalAmount = request.total_amount || (request.items 
+                      ? request.items.reduce((sum, item) => sum + item.total_price, 0)
+                      : 0);
                     
-                  return (
-                    <TableRow 
-                      key={request.id} 
-                      sx={{
-                        opacity: isClientInactive(request.client_id) ? 0.5 : 1,
-                        backgroundColor: isClientInactive(request.client_id) ? 'rgba(0, 0, 0, 0.05)' : 'inherit',
-                        '&:hover': {
-                          cursor: isClientInactive(request.client_id) ? 'not-allowed' : 'pointer',
-                          backgroundColor: isClientInactive(request.client_id) ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.04)'
-                        }
-                      }}
-                    >
-                      <TableCell>{request.request_id}</TableCell>
-                      <TableCell>
-                        {getClientName(request.client_id)}
-                        {isClientInactive(request.client_id) && (
-                          <Chip 
-                            label="Inactive" 
-                            size="small" 
-                            color="default" 
-                            sx={{ ml: 1, fontSize: '0.7rem' }} 
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell>{new Date(request.date).toLocaleDateString()}</TableCell>
-                      <TableCell>{request.items ? request.items.length : 0} items</TableCell>
-                      <TableCell>₱{totalAmount.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <StatusChip status={request.status} />
-                      </TableCell>
-                      <TableCell>
-                        <Button 
-                          size="small"
-                          onClick={() => handleOpenEditForm(request)}
-                          sx={{ mr: 1 }}
-                          disabled={isClientInactive(request.client_id)}
-                        >
-                          Edit
-                        </Button>
-                        <Button 
-                          size="small"
-                          onClick={() => handleOpenStatusDialog(request.id)}
-                          disabled={isClientInactive(request.client_id)}
-                        >
-                          Change Status
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                    return (
+                      <TableRow 
+                        key={request.id} 
+                        sx={{
+                          opacity: isClientInactive(request.client_id) ? 0.5 : 1,
+                          backgroundColor: isClientInactive(request.client_id) ? 'rgba(0, 0, 0, 0.05)' : 'inherit',
+                          '&:hover': {
+                            cursor: isClientInactive(request.client_id) ? 'not-allowed' : 'pointer',
+                            backgroundColor: isClientInactive(request.client_id) ? 'rgba(0, 0, 0, 0.05)' : 'rgba(0, 0, 0, 0.04)'
+                          }
+                        }}
+                      >
+                        <TableCell>{request.request_id}</TableCell>
+                        <TableCell>
+                          {getClientName(request.client_id)}
+                          {isClientInactive(request.client_id) && (
+                            <Chip 
+                              label="Inactive" 
+                              size="small" 
+                              color="default" 
+                              sx={{ ml: 1, fontSize: '0.7rem' }} 
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>{new Date(request.date).toLocaleDateString()}</TableCell>
+                        <TableCell>{request.items ? request.items.length : 0} items</TableCell>
+                        <TableCell>₱{totalAmount.toLocaleString()}</TableCell>
+                        <TableCell>
+                          <StatusChip status={request.status} />
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            size="small"
+                            onClick={() => handleOpenEditForm(request)}
+                            sx={{ mr: 1 }}
+                            disabled={isClientInactive(request.client_id) || request.status === 'Approved' || request.status === 'Rejected'}
+                          >
+                            Edit
+                          </Button>
+                          <Button 
+                            size="small"
+                            onClick={() => handleOpenStatusDialog(request.id)}
+                            disabled={isClientInactive(request.client_id)}
+                            color={request.status === 'Pending' ? 'primary' : 'secondary'}
+                            sx={{ mr: 1 }}
+                          >
+                            Change Status
+                          </Button>
+                          <Button
+                            size="small"
+                            onClick={() => fetchOrderHistory(request.id)}
+                            color="info"
+                          >
+                            History
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
               )}
             </TableBody>
           </Table>
@@ -947,16 +1107,30 @@ const OrderRequestsList: React.FC = () => {
           open={formOpen}
           onClose={handleCloseForm}
           onSubmit={handleSubmitRequest}
-          clients={isEdit ? clients : availableClients}
+          clients={isEdit ? clients : clients}
           products={products}
           initialData={currentRequest}
           isEdit={isEdit}
+          clientsWithOrders={clientsWithOrders}
+          getClientOrderStatus={getClientOrderStatus}
         />
       )}
 
       <Dialog open={statusDialogOpen} onClose={handleCloseStatusDialog}>
         <DialogTitle>Change Request Status</DialogTitle>
         <DialogContent>
+          <Box sx={{ my: 2 }}>
+            <Typography variant="body1">
+              Changing the status to "Approved" or "Rejected" will move this request to the Client Orders section.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              • "Approved" status means the order is accepted and being processed.
+              <br />
+              • "Rejected" status means the order is declined.
+              <br />
+              • Once moved to Client Orders, you can mark it as "Completed" to allow the client to place new orders.
+            </Typography>
+          </Box>
           <FormControl fullWidth margin="normal">
             <InputLabel>Status</InputLabel>
             <Select
@@ -972,8 +1146,27 @@ const OrderRequestsList: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseStatusDialog}>Cancel</Button>
+          <Button 
+            onClick={() => {
+              const request = orderRequests.find(r => r.id === selectedRequestId);
+              if (request) {
+                handleChangeStatus(request.status === 'Pending' ? 'Approved' : 'Pending');
+              }
+            }}
+            variant="contained" 
+            color="primary"
+          >
+            Apply Status Change
+          </Button>
         </DialogActions>
       </Dialog>
+
+      <OrderHistoryDialog
+        open={historyDialogOpen}
+        onClose={() => setHistoryDialogOpen(false)}
+        history={requestHistory}
+        requestId={orderRequests.find(r => r.id === selectedRequestId)?.request_id || ''}
+      />
 
       <Snackbar
         open={snackbarOpen}

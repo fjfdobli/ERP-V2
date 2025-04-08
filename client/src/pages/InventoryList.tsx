@@ -17,7 +17,7 @@ import {
   selectActiveEmployees
 } from '../redux/slices/inventorySlice';
 import { InventoryItem } from '../services/inventoryService';
-import { AppDispatch, RootState } from '../redux/store';
+import { AppDispatch } from '../redux/store';
 
 // Item types for a printing press
 const itemTypes = [
@@ -41,6 +41,7 @@ const InventoryList: React.FC = () => {
   const activeEmployees = useSelector(selectActiveEmployees);
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [showLowStock, setShowLowStock] = useState(false);
   const [quantityDialogOpen, setQuantityDialogOpen] = useState(false);
   const [addItemDialogOpen, setAddItemDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -51,7 +52,6 @@ const InventoryList: React.FC = () => {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
-  const [showLowStock, setShowLowStock] = useState(false);
   
   // State for new item form
   const [newItem, setNewItem] = useState({
@@ -65,12 +65,15 @@ const InventoryList: React.FC = () => {
   });
 
   useEffect(() => {
+    // Fetch inventory data on component mount
     dispatch(fetchInventory());
     
+    // Fetch active suppliers and employees
     dispatch(fetchActiveSuppliers());
     dispatch(fetchActiveEmployees());
   }, [dispatch]);
 
+  // Show error in snackbar if fetch fails
   useEffect(() => {
     if (error) {
       setSnackbarMessage(`Error: ${error}`);
@@ -81,28 +84,26 @@ const InventoryList: React.FC = () => {
 
   const handleSearch = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
-    setShowLowStock(false); // Reset low stock filter when searching
   };
 
   const handleLowStockFilter = () => {
-    if (showLowStock) {
-      // If already showing low stock, return to all items
-      dispatch(fetchInventory());
-      setShowLowStock(false);
-    } else {
-      // Show only low stock items
-      dispatch(fetchLowStockItems());
-      setShowLowStock(true);
-    }
+    setShowLowStock(!showLowStock);
   };
 
+  // Filter inventory items
+  // First by low stock if that filter is active
+  const lowStockFilteredItems = showLowStock
+    ? inventoryItems.filter(item => item.quantity < item.minStockLevel)
+    : inventoryItems;
+
+  // Then by search term if one exists
   const filteredItems = searchTerm 
-    ? inventoryItems.filter(item =>
+    ? lowStockFilteredItems.filter(item =>
         item.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.itemType.toLowerCase().includes(searchTerm.toLowerCase())
       )
-    : inventoryItems;
+    : lowStockFilteredItems;
 
   const handleOpenQuantityDialog = (item: InventoryItem, type: 'add' | 'remove') => {
     setSelectedItem(item);
@@ -320,7 +321,7 @@ const InventoryList: React.FC = () => {
               {filteredItems.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} align="center">
-                    No items found
+                    {showLowStock ? "No low stock items found" : "No items found"}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -424,7 +425,7 @@ const InventoryList: React.FC = () => {
                   {activeSuppliers.map((supplier) => (
                     <MenuItem key={supplier.id} value={supplier.id}>
                       {supplier.name}
-                    </MenuItem>
+                      </MenuItem>
                   ))}
                 </Select>
               </FormControl>

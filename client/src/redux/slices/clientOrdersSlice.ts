@@ -1,180 +1,178 @@
-// src/redux/slices/clientOrdersSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { clientOrdersService, ClientOrder, InsertClientOrder, UpdateClientOrder } from '../../services/clientOrdersService';
+import { RootState } from '../store';
+import { clientOrdersService, ClientOrder } from '../../services/clientOrdersService';
+import { OrderRequestItem } from '../../services/orderRequestsService';
 
+// Define the state interface with extended ClientOrder including items
 interface ClientOrderState {
-  clientOrders: ClientOrder[];
-  currentClientOrder: ClientOrder | null;
-  isLoading: boolean;
+  clientOrders: (ClientOrder & { items?: OrderRequestItem[] })[];
+  loading: boolean;
   error: string | null;
 }
 
+// Initial state
 const initialState: ClientOrderState = {
   clientOrders: [],
-  currentClientOrder: null,
-  isLoading: false,
+  loading: false,
   error: null
 };
 
 // Async thunks
 export const fetchClientOrders = createAsyncThunk(
-  'clientOrders/fetchAll',
-  async (_, { rejectWithValue }) => {
+  'clientOrders/fetchClientOrders',
+  async () => {
     try {
-      return await clientOrdersService.getClientOrders();
+      const orders = await clientOrdersService.getClientOrders();
+      
+      // For each order, fetch its items
+      const ordersWithItems = await Promise.all(
+        orders.map(async (order) => {
+          try {
+            const fullOrder = await clientOrdersService.getClientOrderById(order.id);
+            return fullOrder;
+          } catch (error) {
+            // If we can't get items, return the order without items
+            return order;
+          }
+        })
+      );
+      
+      return ordersWithItems;
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Failed to fetch client orders');
+      throw Error(error.message || 'Failed to fetch client orders');
     }
   }
 );
 
-export const fetchClientOrderById = createAsyncThunk(
-  'clientOrders/fetchById',
-  async (id: number, { rejectWithValue }) => {
+export const getClientOrderById = createAsyncThunk(
+  'clientOrders/getClientOrderById',
+  async (id: number) => {
     try {
       return await clientOrdersService.getClientOrderById(id);
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Failed to fetch client order');
-    }
-  }
-);
-
-export const createClientOrder = createAsyncThunk(
-  'clientOrders/create',
-  async (clientOrder: InsertClientOrder, { rejectWithValue }) => {
-    try {
-      return await clientOrdersService.createClientOrder(clientOrder);
-    } catch (error: any) {
-      return rejectWithValue(error.message || 'Failed to create client order');
-    }
-  }
-);
-
-export const updateClientOrder = createAsyncThunk(
-  'clientOrders/update',
-  async ({ id, updates }: { id: number; updates: UpdateClientOrder }, { rejectWithValue }) => {
-    try {
-      return await clientOrdersService.updateClientOrder(id, updates);
-    } catch (error: any) {
-      return rejectWithValue(error.message || 'Failed to update client order');
+      throw Error(error.message || `Failed to fetch client order with ID ${id}`);
     }
   }
 );
 
 export const changeClientOrderStatus = createAsyncThunk(
-  'clientOrders/changeStatus',
-  async ({ id, status }: { id: number; status: string }, { rejectWithValue }) => {
+  'clientOrders/changeClientOrderStatus',
+  async ({ id, status, changedBy }: { id: number, status: string, changedBy?: string }) => {
     try {
-      return await clientOrdersService.changeOrderStatus(id, status);
+      return await clientOrdersService.changeOrderStatus(id, status, changedBy);
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Failed to change client order status');
+      throw Error(error.message || `Failed to change status for client order with ID ${id}`);
     }
   }
 );
 
-export const generateClientOrderId = createAsyncThunk(
-  'clientOrders/generateId',
-  async (_, { rejectWithValue }) => {
+export const getOrdersByStatus = createAsyncThunk(
+  'clientOrders/getOrdersByStatus',
+  async (status: string) => {
     try {
-      return await clientOrdersService.generateOrderId();
+      return await clientOrdersService.getOrdersByStatus(status);
     } catch (error: any) {
-      return rejectWithValue(error.message || 'Failed to generate client order ID');
+      throw Error(error.message || `Failed to fetch orders with status ${status}`);
     }
   }
 );
 
+// Create the slice
 const clientOrdersSlice = createSlice({
   name: 'clientOrders',
   initialState,
   reducers: {
-    clearCurrentClientOrder: (state) => {
-      state.currentClientOrder = null;
-    },
-    setError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
+    resetError: (state) => {
+      state.error = null;
     }
   },
   extraReducers: (builder) => {
     builder
-      // Fetch all client orders
+      // Handle fetchClientOrders
       .addCase(fetchClientOrders.pending, (state) => {
-        state.isLoading = true;
+        state.loading = true;
         state.error = null;
       })
       .addCase(fetchClientOrders.fulfilled, (state, action) => {
-        state.isLoading = false;
+        state.loading = false;
         state.clientOrders = action.payload;
       })
       .addCase(fetchClientOrders.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch client orders';
       })
-      // Fetch client order by ID
-      .addCase(fetchClientOrderById.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(fetchClientOrderById.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.currentClientOrder = action.payload;
-      })
-      .addCase(fetchClientOrderById.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
-      })
-      // Create client order
-      .addCase(createClientOrder.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(createClientOrder.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.clientOrders.unshift(action.payload);
-      })
-      .addCase(createClientOrder.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
-      })
-      // Update client order
-      .addCase(updateClientOrder.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(updateClientOrder.fulfilled, (state, action) => {
-        state.isLoading = false;
-        const index = state.clientOrders.findIndex((order) => order.id === action.payload.id);
-        if (index !== -1) {
-          state.clientOrders[index] = action.payload;
-        }
-        if (state.currentClientOrder?.id === action.payload.id) {
-          state.currentClientOrder = action.payload;
-        }
-      })
-      .addCase(updateClientOrder.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
-      })
-      // Change client order status
+      
+      // Handle getClientOrderById - does not modify state, just gets data
+      
+      // Handle changeClientOrderStatus
       .addCase(changeClientOrderStatus.pending, (state) => {
-        state.isLoading = true;
+        state.loading = true;
         state.error = null;
       })
-      .addCase(changeClientOrderStatus.fulfilled, (state, action) => {
-        state.isLoading = false;
-        const index = state.clientOrders.findIndex((order) => order.id === action.payload.id);
-        if (index !== -1) {
-          state.clientOrders[index] = action.payload;
-        }
-        if (state.currentClientOrder?.id === action.payload.id) {
-          state.currentClientOrder = action.payload;
+      .addCase(changeClientOrderStatus.fulfilled, (state, action: PayloadAction<ClientOrder>) => {
+        state.loading = false;
+        
+        // If status is changed to Pending, the order has been moved back to Order Requests
+        // and should be removed from client orders
+        if (action.payload.status === 'Pending') {
+          console.log(`Removing order ${action.payload.id} from client orders list as it's moved to Pending`);
+          state.clientOrders = state.clientOrders.filter(order => order.id !== action.payload.id);
+        } else {
+          // For other status changes, update the order
+          const index = state.clientOrders.findIndex(order => order.id === action.payload.id);
+          if (index !== -1) {
+            // Preserve the items array if it exists
+            const items = state.clientOrders[index].items;
+            state.clientOrders[index] = {
+              ...action.payload,
+              items
+            };
+            console.log(`Updated order ${action.payload.id} status to ${action.payload.status}`);
+          } else {
+            // If the order doesn't exist in the state (new order), add it
+            console.log(`Adding new order with ID ${action.payload.id} to client orders list`);
+            state.clientOrders.push(action.payload);
+          }
         }
       })
       .addCase(changeClientOrderStatus.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
+        state.loading = false;
+        state.error = action.error.message || 'Failed to change client order status';
+      })
+      
+      // Handle getOrdersByStatus
+      .addCase(getOrdersByStatus.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(getOrdersByStatus.fulfilled, (state, action) => {
+        state.loading = false;
+        // This doesn't change the overall orders state, as it's just a filtered view
+      })
+      .addCase(getOrdersByStatus.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Failed to fetch orders by status';
       });
-  }
+  },
 });
 
-export const { clearCurrentClientOrder, setError } = clientOrdersSlice.actions;
+// Export actions
+export const { resetError } = clientOrdersSlice.actions;
+
+// Export selectors
+export const selectAllClientOrders = (state: RootState) => state.orders.clientOrders;
+export const selectClientOrdersLoading = (state: RootState) => state.orders.loading;
+export const selectClientOrdersError = (state: RootState) => state.orders.error;
+
+// Selectors for filtered orders
+export const selectApprovedOrders = (state: RootState) => 
+  state.orders.clientOrders.filter(order => order.status === 'Approved');
+
+export const selectCompletedOrders = (state: RootState) => 
+  state.orders.clientOrders.filter(order => order.status === 'Completed');
+
+export const selectRejectedOrders = (state: RootState) => 
+  state.orders.clientOrders.filter(order => order.status === 'Rejected');
+
+// Export reducer
 export default clientOrdersSlice.reducer;
