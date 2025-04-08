@@ -1,14 +1,22 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import apiClient from './apiClient';
-import { Machinery, MachineryFilters, MaintenanceRecord, machineryService } from '../../services/machineryService';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { 
+  machineryService, 
+  Machinery, 
+  MaintenanceRecord, 
+  MachineryFilters, 
+  MachineryStats,
+  MaintenanceCostSummary,
+  InsertMachinery,
+  InsertMaintenanceRecord
+} from '../../services/machineryService';
+import { RootState } from '../store';
 
 interface MachineryState {
   machinery: Machinery[];
   currentMachinery: Machinery | null;
   maintenanceRecords: MaintenanceRecord[];
-  currentRecord: MaintenanceRecord | null;
-  machineryStats: any;
-  maintenanceCostSummary: any;
+  machineryStats: MachineryStats | null;
+  maintenanceCostSummary: MaintenanceCostSummary | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -17,29 +25,20 @@ const initialState: MachineryState = {
   machinery: [],
   currentMachinery: null,
   maintenanceRecords: [],
-  currentRecord: null,
   machineryStats: null,
   maintenanceCostSummary: null,
   isLoading: false,
   error: null
 };
 
-// Machinery operations
+// Async thunks for machinery
 export const fetchMachinery = createAsyncThunk(
   'machinery/fetchMachinery',
-  async (filters: MachineryFilters | undefined = undefined, { rejectWithValue }) => {
+  async (filters: MachineryFilters = {}, { rejectWithValue }) => {
     try {
-      // Try API first
-      const response = await apiClient.get('/machinery', { params: filters });
-      return response.data.data;
-    } catch (error: any) {
-      console.log('API error, falling back to direct service:', error);
-      try {
-        // Fallback to direct service
-        return await machineryService.getMachinery(filters);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch machinery');
-      }
+      return await machineryService.getMachinery(filters);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch machinery');
     }
   }
 );
@@ -48,46 +47,31 @@ export const fetchMachineryById = createAsyncThunk(
   'machinery/fetchMachineryById',
   async (id: number, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`/machinery/${id}`);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.getMachineryById(id);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch machinery');
-      }
+      return await machineryService.getMachineryById(id);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch machinery details');
     }
   }
 );
 
 export const createMachinery = createAsyncThunk(
   'machinery/createMachinery',
-  async (machineryData: Omit<Machinery, 'id' | 'createdAt' | 'updatedAt'>, { rejectWithValue }) => {
+  async (machinery: InsertMachinery, { rejectWithValue }) => {
     try {
-      const response = await apiClient.post('/machinery', machineryData);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.createMachinery(machineryData);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to create machinery');
-      }
+      return await machineryService.createMachinery(machinery);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to create machinery');
     }
   }
 );
 
 export const updateMachinery = createAsyncThunk(
   'machinery/updateMachinery',
-  async ({ id, data }: { id: number; data: Partial<Machinery> }, { rejectWithValue }) => {
+  async ({ id, data }: { id: number; data: Partial<InsertMachinery> }, { rejectWithValue }) => {
     try {
-      const response = await apiClient.put(`/machinery/${id}`, data);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.updateMachinery(id, data);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to update machinery');
-      }
+      return await machineryService.updateMachinery(id, data);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to update machinery');
     }
   }
 );
@@ -96,68 +80,44 @@ export const deleteMachinery = createAsyncThunk(
   'machinery/deleteMachinery',
   async (id: number, { rejectWithValue }) => {
     try {
-      await apiClient.delete(`/machinery/${id}`);
+      await machineryService.deleteMachinery(id);
       return id;
-    } catch (error: any) {
-      try {
-        await machineryService.deleteMachinery(id);
-        return id;
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to delete machinery');
-      }
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete machinery');
     }
   }
 );
 
-// Maintenance record operations
+// Async thunks for maintenance records
 export const fetchMaintenanceRecords = createAsyncThunk(
   'machinery/fetchMaintenanceRecords',
-  async (machineryId: number | undefined = undefined, { rejectWithValue }) => {
+  async (machineryId: number | undefined, { rejectWithValue }) => {
     try {
-      const url = machineryId 
-        ? `/maintenance-records?machineryId=${machineryId}` 
-        : '/maintenance-records';
-        
-      const response = await apiClient.get(url);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.getMaintenanceRecords(machineryId);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch maintenance records');
-      }
+      return await machineryService.getMaintenanceRecords(machineryId);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch maintenance records');
     }
   }
 );
 
 export const createMaintenanceRecord = createAsyncThunk(
   'machinery/createMaintenanceRecord',
-  async (recordData: Omit<MaintenanceRecord, 'id' | 'createdAt' | 'updatedAt'>, { rejectWithValue }) => {
+  async (record: InsertMaintenanceRecord, { rejectWithValue }) => {
     try {
-      const response = await apiClient.post('/maintenance-records', recordData);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.createMaintenanceRecord(recordData);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to create maintenance record');
-      }
+      return await machineryService.createMaintenanceRecord(record);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to create maintenance record');
     }
   }
 );
 
 export const updateMaintenanceRecord = createAsyncThunk(
   'machinery/updateMaintenanceRecord',
-  async ({ id, data }: { id: number; data: Partial<MaintenanceRecord> }, { rejectWithValue }) => {
+  async ({ id, data }: { id: number; data: Partial<InsertMaintenanceRecord> }, { rejectWithValue }) => {
     try {
-      const response = await apiClient.put(`/maintenance-records/${id}`, data);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.updateMaintenanceRecord(id, data);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to update maintenance record');
-      }
+      return await machineryService.updateMaintenanceRecord(id, data);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to update maintenance record');
     }
   }
 );
@@ -166,32 +126,22 @@ export const deleteMaintenanceRecord = createAsyncThunk(
   'machinery/deleteMaintenanceRecord',
   async (id: number, { rejectWithValue }) => {
     try {
-      await apiClient.delete(`/maintenance-records/${id}`);
+      await machineryService.deleteMaintenanceRecord(id);
       return id;
-    } catch (error: any) {
-      try {
-        await machineryService.deleteMaintenanceRecord(id);
-        return id;
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to delete maintenance record');
-      }
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete maintenance record');
     }
   }
 );
 
-// Stats operations
+// Async thunks for statistics
 export const fetchMachineryStats = createAsyncThunk(
   'machinery/fetchMachineryStats',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get('/machinery/stats');
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.getMachineryStats();
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch machinery statistics');
-      }
+      return await machineryService.getMachineryStats();
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch machinery statistics');
     }
   }
 );
@@ -200,14 +150,9 @@ export const fetchMaintenanceCostSummary = createAsyncThunk(
   'machinery/fetchMaintenanceCostSummary',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get('/maintenance-records/cost-summary');
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await machineryService.getMaintenanceCostSummary();
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch maintenance cost summary');
-      }
+      return await machineryService.getMaintenanceCostSummary();
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch maintenance cost summary');
     }
   }
 );
@@ -216,11 +161,8 @@ const machinerySlice = createSlice({
   name: 'machinery',
   initialState,
   reducers: {
-    clearCurrentMachinery: (state) => {
-      state.currentMachinery = null;
-    },
-    clearCurrentRecord: (state) => {
-      state.currentRecord = null;
+    setCurrentMachinery: (state, action: PayloadAction<Machinery | null>) => {
+      state.currentMachinery = action.payload;
     },
     clearError: (state) => {
       state.error = null;
@@ -231,11 +173,11 @@ const machinerySlice = createSlice({
       // Fetch machinery
       .addCase(fetchMachinery.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchMachinery.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.machinery = action.payload;
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(fetchMachinery.rejected, (state, action) => {
         state.isLoading = false;
@@ -245,11 +187,11 @@ const machinerySlice = createSlice({
       // Fetch machinery by ID
       .addCase(fetchMachineryById.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchMachineryById.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.currentMachinery = action.payload;
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(fetchMachineryById.rejected, (state, action) => {
         state.isLoading = false;
@@ -259,12 +201,11 @@ const machinerySlice = createSlice({
       // Create machinery
       .addCase(createMachinery.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(createMachinery.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.machinery.push(action.payload);
-        state.currentMachinery = action.payload;
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(createMachinery.rejected, (state, action) => {
         state.isLoading = false;
@@ -274,15 +215,17 @@ const machinerySlice = createSlice({
       // Update machinery
       .addCase(updateMachinery.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(updateMachinery.fulfilled, (state, action) => {
-        state.isLoading = false;
         const index = state.machinery.findIndex(item => item.id === action.payload.id);
         if (index !== -1) {
           state.machinery[index] = action.payload;
         }
-        state.currentMachinery = action.payload;
+        if (state.currentMachinery && state.currentMachinery.id === action.payload.id) {
+          state.currentMachinery = action.payload;
+        }
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(updateMachinery.rejected, (state, action) => {
         state.isLoading = false;
@@ -292,14 +235,14 @@ const machinerySlice = createSlice({
       // Delete machinery
       .addCase(deleteMachinery.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(deleteMachinery.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.machinery = state.machinery.filter(item => item.id !== action.payload);
         if (state.currentMachinery && state.currentMachinery.id === action.payload) {
           state.currentMachinery = null;
         }
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(deleteMachinery.rejected, (state, action) => {
         state.isLoading = false;
@@ -309,11 +252,11 @@ const machinerySlice = createSlice({
       // Fetch maintenance records
       .addCase(fetchMaintenanceRecords.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchMaintenanceRecords.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.maintenanceRecords = action.payload;
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(fetchMaintenanceRecords.rejected, (state, action) => {
         state.isLoading = false;
@@ -323,17 +266,33 @@ const machinerySlice = createSlice({
       // Create maintenance record
       .addCase(createMaintenanceRecord.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(createMaintenanceRecord.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.maintenanceRecords.unshift(action.payload);
-        state.currentRecord = action.payload;
         
-        // Also update the machinery's last maintenance date if this record belongs to current machinery
+        // Update machinery last maintenance date if this record is for the current machinery
         if (state.currentMachinery && state.currentMachinery.id === action.payload.machineryId) {
           state.currentMachinery.lastMaintenanceDate = action.payload.date;
+          
+          // Set next maintenance date to 3 months from now by default
+          const nextDate = new Date(action.payload.date);
+          nextDate.setMonth(nextDate.getMonth() + 3);
+          state.currentMachinery.nextMaintenanceDate = nextDate.toISOString().split('T')[0];
         }
+        
+        // Also update in the machinery list
+        const machineryIndex = state.machinery.findIndex(item => item.id === action.payload.machineryId);
+        if (machineryIndex !== -1) {
+          state.machinery[machineryIndex].lastMaintenanceDate = action.payload.date;
+          
+          // Set next maintenance date to 3 months from now by default
+          const nextDate = new Date(action.payload.date);
+          nextDate.setMonth(nextDate.getMonth() + 3);
+          state.machinery[machineryIndex].nextMaintenanceDate = nextDate.toISOString().split('T')[0];
+        }
+        
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(createMaintenanceRecord.rejected, (state, action) => {
         state.isLoading = false;
@@ -343,15 +302,14 @@ const machinerySlice = createSlice({
       // Update maintenance record
       .addCase(updateMaintenanceRecord.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(updateMaintenanceRecord.fulfilled, (state, action) => {
-        state.isLoading = false;
-        const index = state.maintenanceRecords.findIndex(record => record.id === action.payload.id);
+        const index = state.maintenanceRecords.findIndex(item => item.id === action.payload.id);
         if (index !== -1) {
           state.maintenanceRecords[index] = action.payload;
         }
-        state.currentRecord = action.payload;
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(updateMaintenanceRecord.rejected, (state, action) => {
         state.isLoading = false;
@@ -361,14 +319,11 @@ const machinerySlice = createSlice({
       // Delete maintenance record
       .addCase(deleteMaintenanceRecord.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(deleteMaintenanceRecord.fulfilled, (state, action) => {
+        state.maintenanceRecords = state.maintenanceRecords.filter(item => item.id !== action.payload);
         state.isLoading = false;
-        state.maintenanceRecords = state.maintenanceRecords.filter(record => record.id !== action.payload);
-        if (state.currentRecord && state.currentRecord.id === action.payload) {
-          state.currentRecord = null;
-        }
+        state.error = null;
       })
       .addCase(deleteMaintenanceRecord.rejected, (state, action) => {
         state.isLoading = false;
@@ -378,11 +333,11 @@ const machinerySlice = createSlice({
       // Fetch machinery stats
       .addCase(fetchMachineryStats.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchMachineryStats.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.machineryStats = action.payload;
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(fetchMachineryStats.rejected, (state, action) => {
         state.isLoading = false;
@@ -392,11 +347,11 @@ const machinerySlice = createSlice({
       // Fetch maintenance cost summary
       .addCase(fetchMaintenanceCostSummary.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchMaintenanceCostSummary.fulfilled, (state, action) => {
-        state.isLoading = false;
         state.maintenanceCostSummary = action.payload;
+        state.isLoading = false;
+        state.error = null;
       })
       .addCase(fetchMaintenanceCostSummary.rejected, (state, action) => {
         state.isLoading = false;
@@ -405,5 +360,15 @@ const machinerySlice = createSlice({
   }
 });
 
-export const { clearCurrentMachinery, clearCurrentRecord, clearError } = machinerySlice.actions;
+export const { setCurrentMachinery, clearError } = machinerySlice.actions;
+
+// Selectors
+export const selectAllMachinery = (state: RootState) => state.machinery.machinery;
+export const selectCurrentMachinery = (state: RootState) => state.machinery.currentMachinery;
+export const selectMaintenanceRecords = (state: RootState) => state.machinery.maintenanceRecords;
+export const selectMachineryStats = (state: RootState) => state.machinery.machineryStats;
+export const selectMaintenanceCostSummary = (state: RootState) => state.machinery.maintenanceCostSummary;
+export const selectMachineryLoading = (state: RootState) => state.machinery.isLoading;
+export const selectMachineryError = (state: RootState) => state.machinery.error;
+
 export default machinerySlice.reducer;

@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
   Button, TextField, InputAdornment, CircularProgress, Dialog, DialogTitle, DialogContent, 
   DialogActions, Grid, Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, 
-  Chip, IconButton, Tooltip, Tabs, Tab, Divider, Card, CardContent, 
+  Chip, Tooltip, Tabs, Tab, Divider, Card, CardContent, 
   Accordion, AccordionSummary, AccordionDetails
 } from '@mui/material';
 import { 
@@ -12,7 +12,8 @@ import {
   ReceiptLong as ReceiptLongIcon, EditNote as EditNoteIcon, MonetizationOn as MonetizationOnIcon,
   PictureAsPdf as PictureAsPdfIcon, AccountBalanceWallet as AccountBalanceWalletIcon,
   Edit as EditIcon, Delete as DeleteIcon, CheckCircle as CheckCircleIcon,
-  Schedule as ScheduleIcon, CreditCard as CreditCardIcon, AttachMoney as AttachMoneyIcon
+  Schedule as ScheduleIcon, CreditCard as CreditCardIcon, AttachMoney as AttachMoneyIcon,
+  Download as DownloadIcon
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -26,6 +27,11 @@ import { Payroll as PayrollType, PayrollFilters } from '../services/payrollServi
 import { format, parseISO, addMonths, subMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { Employee } from '../services/employeesService';
 import { fetchAttendance } from '../redux/slices/attendanceSlice';
+import { calculateBaseSalary, calculateOvertimePay, calculateNetSalary } from '../services/utils/payrollUtils';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+import { autoTable } from 'jspdf-autotable';
+import { Attendance } from '../services/attendanceService';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -95,7 +101,9 @@ const PayrollPage: React.FC = () => {
   const [selectedPayroll, setSelectedPayroll] = useState<PayrollType | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filters, setFilters] = useState<PayrollFilters>({
-    period: format(new Date(), 'yyyy-MM')
+    period: format(new Date(), 'yyyy-MM'),
+    startDate: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+    endDate: format(endOfMonth(new Date()), 'yyyy-MM-dd')
   });
   
   const [formData, setFormData] = useState<PayrollFormData>({
@@ -210,15 +218,33 @@ const PayrollPage: React.FC = () => {
         .filter((emp: any) => emp.status !== 'Inactive')
         .map((emp: any) => {
           const salary = typeof emp.salary === 'number' ? emp.salary : 0;
+          const employeeId = typeof emp.id === 'string' ? parseInt(emp.id) : emp.id;
+          
+          // Calculate overtime from attendance records
+          const overtimePay = calculateOvertimePay(
+            attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+            salary / 176, // hourly rate (22 days × 8 hours)
+            filters.startDate || format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+            filters.endDate || format(endOfMonth(new Date()), 'yyyy-MM-dd'),
+            1.25 // 25% overtime premium
+          );
+          
+          // Calculate base salary from attendance records
+          const baseSalary = calculateBaseSalary(
+            attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+            salary / 22, // daily rate
+            filters.startDate || format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+            filters.endDate || format(endOfMonth(new Date()), 'yyyy-MM-dd')
+          );
           
           return {
-            employeeId: Number(emp.id),
+            employeeId,
             employeeName: `${emp.firstName} ${emp.lastName}`,
-            baseSalary: salary,
-            overtimePay: calculateOvertimePay(Number(emp.id), salary),
+            baseSalary: Math.round(baseSalary * 100) / 100,
+            overtimePay: Math.round(overtimePay * 100) / 100,
             bonus: 0,
-            deductions: salary * 0.02, // Example: 2% standard deduction
-            taxWithholding: salary * 0.1, // Example: 10% tax
+            deductions: Math.round(salary * 0.045 * 100) / 100, // 4.5% SSS
+            taxWithholding: Math.round(salary * 0.1 * 100) / 100, // 10% tax
             include: true
           };
         });
@@ -229,25 +255,6 @@ const PayrollPage: React.FC = () => {
     setBulkPayrollDate(new Date());
     setIsBulkMode(true);
     setOpenDialog(true);
-  };
-
-  const calculateOvertimePay = (employeeId: number, baseSalary: number) => {
-    // Check if we have attendance records with overtime
-    if (!attendanceRecords?.length) return 0;
-    
-    const hourlyRate = baseSalary / 176; // Assuming 22 working days of 8 hours
-    const overtimeMultiplier = 1.5; // 1.5x regular pay for overtime
-    
-    const employeeAttendance = attendanceRecords.filter(
-      (record: any) => record.employeeId === employeeId && record.overtime
-    );
-    
-    const totalOvertimeHours = employeeAttendance.reduce(
-      (sum: number, record: any) => sum + (record.overtime || 0), 
-      0
-    );
-    
-    return totalOvertimeHours * hourlyRate * overtimeMultiplier;
   };
 
   const handleCloseDialog = () => {
@@ -276,14 +283,33 @@ const PayrollPage: React.FC = () => {
       if (name === 'employeeId' && employees) {
         const selectedEmployee = employees.find((emp: any) => Number(emp.id) === Number(value));
         if (selectedEmployee) {
+          const employeeId = typeof selectedEmployee.id === 'string' ? parseInt(selectedEmployee.id) : selectedEmployee.id;
           const salary = selectedEmployee.salary || 0;
+          
+          // Calculate overtime from attendance records
+          const overtimePay = calculateOvertimePay(
+            attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+            salary / 176, // hourly rate (22 days × 8 hours)
+            format(prev.startDate, 'yyyy-MM-dd'),
+            format(prev.endDate, 'yyyy-MM-dd'),
+            1.25 // 25% overtime premium
+          );
+          
+          // Calculate base salary from attendance records
+          const baseSalary = calculateBaseSalary(
+            attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+            salary / 22, // daily rate
+            format(prev.startDate, 'yyyy-MM-dd'),
+            format(prev.endDate, 'yyyy-MM-dd')
+          );
+          
           return {
             ...prev,
             [name]: value,
-            baseSalary: salary,
-            deductions: salary * 0.02, // Example: 2% standard deduction
-            taxWithholding: salary * 0.1, // Example: 10% tax withholding
-            overtimePay: calculateOvertimePay(Number(value), salary)
+            baseSalary: Math.round(baseSalary * 100) / 100,
+            overtimePay: Math.round(overtimePay * 100) / 100,
+            deductions: Math.round(salary * 0.045 * 100) / 100, // 4.5% SSS
+            taxWithholding: Math.round(salary * 0.1 * 100) / 100 // 10% tax
           };
         }
       }
@@ -298,12 +324,113 @@ const PayrollPage: React.FC = () => {
         [name]: date
       }));
 
-      // If changing start or end date, also update period
-      if (name === 'startDate') {
-        setFormData(prev => ({
-          ...prev,
-          period: format(date, 'yyyy-MM')
-        }));
+      // If changing start or end date, also update period and recalculate values
+      if (name === 'startDate' || name === 'endDate') {
+        setFormData((prev) => {
+          const newStartDate = name === 'startDate' ? date : prev.startDate;
+          // Removed redundant line as newEndDate is already handled elsewhere
+
+          // Update period based on start date
+          const newPeriod = format(formData.startDate, 'yyyy-MM');
+
+          // Recalculate values if employee is selected
+          if (prev.employeeId && employees) {
+            const selectedEmployee = employees.find((emp: any) => 
+              Number(emp.id) === Number(prev.employeeId)
+            );
+
+            if (selectedEmployee) {
+              const employeeId = typeof selectedEmployee.id === 'string' ? 
+                parseInt(selectedEmployee.id) : selectedEmployee.id;
+              const salary = selectedEmployee.salary || 0;
+
+              // Calculate overtime from attendance records
+              const overtimePay = calculateOvertimePay(
+                attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+                salary / 176, // hourly rate
+                format(prev.startDate, 'yyyy-MM-dd'),
+                format(newEndDate, 'yyyy-MM-dd'),
+                1.25 // 25% overtime premium
+              );
+
+              // Calculate base salary from attendance records
+              const baseSalary = calculateBaseSalary(
+                attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+                salary / 22, // daily rate
+                format(prev.startDate, 'yyyy-MM-dd'),
+                format(newEndDate, 'yyyy-MM-dd')
+              );
+
+              return {
+                ...prev,
+                period: newPeriod,
+                startDate: name === 'startDate' ? date : formData.startDate,
+                endDate: newEndDate,
+                baseSalary: Math.round(baseSalary * 100) / 100,
+                overtimePay: Math.round(overtimePay * 100) / 100
+              };
+            }
+          }
+
+          return {
+            ...prev,
+            period: newPeriod,
+            startDate: prev.startDate,
+            endDate: newEndDate
+          };
+        });
+        const newEndDate = name === 'endDate' ? date : formData.endDate;
+        
+        // Update period based on start date
+        const newPeriod = format(formData.startDate, 'yyyy-MM');
+        
+        setFormData(prev => {
+          // Recalculate values if employee is selected
+          if (prev.employeeId && employees) {
+            const selectedEmployee = employees.find((emp: any) => 
+              Number(emp.id) === Number(prev.employeeId)
+            );
+            
+            if (selectedEmployee) {
+              const employeeId = typeof selectedEmployee.id === 'string' ? 
+                parseInt(selectedEmployee.id) : selectedEmployee.id;
+              const salary = selectedEmployee.salary || 0;
+              
+              // Calculate overtime from attendance records
+              const overtimePay = calculateOvertimePay(
+                attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+                salary / 176, // hourly rate
+                format(prev.startDate, 'yyyy-MM-dd'),
+                format(newEndDate, 'yyyy-MM-dd'),
+                1.25 // 25% overtime premium
+              );
+              
+              // Calculate base salary from attendance records
+              const baseSalary = calculateBaseSalary(
+                attendanceRecords.filter((record: Attendance) => record.employeeId === employeeId),
+                salary / 22, // daily rate
+                format(prev.startDate, 'yyyy-MM-dd'),
+                format(newEndDate, 'yyyy-MM-dd')
+              );
+              
+              return {
+                ...prev,
+                period: newPeriod,
+                startDate: prev.startDate,
+                endDate: newEndDate,
+                baseSalary: Math.round(baseSalary * 100) / 100,
+                overtimePay: Math.round(overtimePay * 100) / 100
+              };
+            }
+          }
+          
+          return {
+            ...prev,
+            period: newPeriod,
+            startDate: name === 'startDate' ? date : prev.startDate,
+            endDate: newEndDate
+          };
+        });
       }
     }
   };
@@ -322,6 +449,45 @@ const PayrollPage: React.FC = () => {
         startDate: newStartDate,
         endDate: newEndDate
       }));
+      
+      // Recalculate bulk payroll data
+      if (employees && employees.length > 0 && bulkPayrollData.length > 0) {
+        const updatedData = bulkPayrollData.map(row => {
+          const employee = employees.find((emp: any) => Number(emp.id) === row.employeeId);
+          if (!employee) return row;
+          
+          const salary = employee.salary || 0;
+          
+          // Calculate overtime from attendance records
+          const overtimePay = calculateOvertimePay(
+            attendanceRecords.filter((record: Attendance) => 
+              record.employeeId === row.employeeId
+            ),
+            salary / 176, // hourly rate
+            format(newStartDate, 'yyyy-MM-dd'),
+            format(newEndDate, 'yyyy-MM-dd'),
+            1.25 // 25% overtime premium
+          );
+          
+          // Calculate base salary from attendance records
+          const baseSalary = calculateBaseSalary(
+            attendanceRecords.filter((record: Attendance) => 
+              record.employeeId === row.employeeId
+            ),
+            salary / 22, // daily rate
+            format(newStartDate, 'yyyy-MM-dd'),
+            format(newEndDate, 'yyyy-MM-dd')
+          );
+          
+          return {
+            ...row,
+            baseSalary: Math.round(baseSalary * 100) / 100,
+            overtimePay: Math.round(overtimePay * 100) / 100
+          };
+        });
+        
+        setBulkPayrollData(updatedData);
+      }
     }
   };
 
@@ -549,6 +715,394 @@ const PayrollPage: React.FC = () => {
     return employee ? `${employee.firstName} ${employee.lastName}` : 'Unknown Employee';
   };
 
+  const getEmployeeDetails = (employeeId: number) => {
+    return employees?.find((emp: any) => Number(emp.id) === employeeId);
+  };
+
+  // PDF Generation Functions
+  const generatePayslipPDF = (payroll: PayrollType) => {
+    const employee = getEmployeeDetails(payroll.employeeId);
+    if (!employee) {
+      showSnackbar('Employee details not found', 'error');
+      return;
+    }
+
+    // Create the document
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    let yPos = margin;
+
+    // Company Logo and Header
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text("Opzon's Printers", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text("Lanang, Davao city, Philippines", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 6;
+    
+    doc.text("Tel: (02) 8123-4567 | Email: payroll@printingpress.com", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 12;
+
+    // Document Title
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(35, 87, 137);
+    doc.text("EMPLOYEE PAYSLIP", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 12;
+    
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+    
+    // Border for the entire document
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.5);
+    doc.rect(margin, margin - 10, pageWidth - 2 * margin, yPos + 140);
+    
+    // Employee Information Section
+    doc.setFillColor(240, 240, 240);
+    doc.rect(margin, yPos, pageWidth - 2 * margin, 40, 'F');
+    
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text("EMPLOYEE DETAILS", margin + 5, yPos + 8);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Employee Name:`, margin + 5, yPos + 16);
+    doc.text(`${employee.firstName} ${employee.lastName}`, margin + 60, yPos + 16);
+    
+    doc.text(`Employee ID:`, margin + 5, yPos + 24);
+    doc.text(`${employee.employeeId || '---'}`, margin + 60, yPos + 24);
+    
+    doc.text(`Position:`, margin + 5, yPos + 32);
+    doc.text(`${employee.position || '---'}`, margin + 60, yPos + 32);
+    
+    doc.text(`Pay Period:`, pageWidth - margin - 80, yPos + 16);
+    doc.text(`${format(parseISO(payroll.startDate), 'MM/dd/yyyy')} - ${format(parseISO(payroll.endDate), 'MM/dd/yyyy')}`, pageWidth - margin - 30, yPos + 16);
+    
+    doc.text(`Payroll Date:`, pageWidth - margin - 80, yPos + 24);
+    doc.text(`${payroll.paymentDate ? format(parseISO(payroll.paymentDate), 'MM/dd/yyyy') : '---'}`, pageWidth - margin - 30, yPos + 24);
+    
+    doc.text(`Status:`, pageWidth - margin - 80, yPos + 32);
+    doc.text(`${payroll.status}`, pageWidth - margin - 30, yPos + 32);
+    
+    yPos += 50;
+    
+    // Earnings Section
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text("EARNINGS", margin + 5, yPos);
+    // Earnings Section
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text("EARNINGS", margin + 5, yPos);
+    yPos += 5;
+    
+    // Earnings Table
+    const earningsData = [
+      ["Description", "Amount"],
+      ["Basic Salary", formatCurrency(payroll.baseSalary)],
+      ["Overtime Pay", formatCurrency(payroll.overtimePay)],
+      ["Bonus", formatCurrency(payroll.bonus)],
+      ["Gross Pay", formatCurrency(payroll.baseSalary + payroll.overtimePay + payroll.bonus)]
+    ];
+    
+    autoTable(doc, {
+      startY: yPos,
+      head: [earningsData[0]],
+      body: earningsData.slice(1),
+      theme: 'grid',
+      headStyles: {
+        fillColor: [220, 230, 240],
+        textColor: [0, 0, 0],
+        fontStyle: 'bold'
+      },
+      margin: { left: margin + 5, right: margin + 5 },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'auto',
+        cellPadding: 3
+      },
+      columnStyles: {
+        0: { cellWidth: 150 },
+        1: { halign: 'right' }
+      }
+    });
+    
+    yPos = (doc as any).lastAutoTable.finalY + 10;
+    
+    // Deductions Section
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text("DEDUCTIONS", margin + 5, yPos);
+    yPos += 5;
+    
+    // Deductions Table
+    const deductionsData = [
+      ["Description", "Amount"],
+      ["Standard Deductions", formatCurrency(payroll.deductions)],
+      ["Tax Withholding", formatCurrency(payroll.taxWithholding)],
+      ["Total Deductions", formatCurrency(payroll.deductions + payroll.taxWithholding)]
+    ];
+    
+    autoTable(doc, {
+      startY: yPos,
+      head: [deductionsData[0]],
+      body: deductionsData.slice(1),
+      theme: 'grid',
+      headStyles: {
+        fillColor: [220, 230, 240],
+        textColor: [0, 0, 0],
+        fontStyle: 'bold'
+      },
+      margin: { left: margin + 5, right: margin + 5 },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'auto',
+        cellPadding: 3
+      },
+      columnStyles: {
+        0: { cellWidth: 150 },
+        1: { halign: 'right' }
+      }
+    });
+    
+    yPos = (doc as any).lastAutoTable.finalY + 10;
+    
+    // Net Pay Section
+    doc.setFillColor(220, 230, 240);
+    doc.rect(margin + 5, yPos, pageWidth - 2 * margin - 10, 20, 'F');
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text("NET PAY:", margin + 15, yPos + 12);
+    
+    doc.setFontSize(14);
+    doc.setTextColor(0, 100, 0);
+    doc.text(formatCurrency(payroll.netSalary), pageWidth - margin - 30, yPos + 12, { align: 'right' });
+    
+    // Reset color
+    doc.setTextColor(0, 0, 0);
+    
+    yPos += 30;
+    
+    // Additional Information
+    if (payroll.bankTransferRef) {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Bank Transfer Reference: ${payroll.bankTransferRef}`, margin + 5, yPos);
+      yPos += 6;
+    }
+    
+    if (payroll.notes) {
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Notes: ${payroll.notes}`, margin + 5, yPos);
+      yPos += 6;
+    }
+    
+    yPos += 10;
+    
+    // Footer with signatures
+    doc.line(margin + 20, yPos, margin + 80, yPos);
+    doc.line(pageWidth - margin - 80, yPos, pageWidth - margin - 20, yPos);
+    
+    doc.setFontSize(9);
+    doc.text("Prepared by", margin + 20, yPos + 5, { align: 'left' });
+    doc.text("Received by", pageWidth - margin - 80, yPos + 5, { align: 'left' });
+    
+    // Disclaimer at bottom
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.text("This is a computer-generated document and does not require a signature.", pageWidth / 2, pageHeight - 20, { align: 'center' });
+    
+    // Save the PDF with the employee name and period
+    const fileName = `Payslip_${employee.lastName}_${employee.firstName}_${payroll.period}.pdf`;
+    doc.save(fileName);
+  };
+
+  // Generate period summary PDF report
+  const generatePeriodReport = (period: string, summary: any) => {
+    // Create the document
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    let yPos = margin;
+
+    // Company Logo and Header
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text("Opzon's Printers", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text("Lanang, Davao City, Philippines", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 6;
+    
+    doc.text("Tel: (02) 8123-4567 | Email: payroll@printingpress.com", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 15;
+
+    // Document Title
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(35, 87, 137);
+    doc.text("PAYROLL SUMMARY REPORT", pageWidth / 2, yPos, { align: 'center' });
+    yPos += 8;
+    
+    // Period subtitle
+    doc.setFontSize(12);
+    doc.text(`Period: ${format(
+      new Date(
+        Number(period.split('-')[0]),
+        Number(period.split('-')[1]) - 1
+      ),
+      'MMMM yyyy'
+    )}`, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 15;
+    
+    // Reset text color
+    doc.setTextColor(0, 0, 0);
+    
+    // Summary Box
+    doc.setDrawColor(200, 200, 200);
+    doc.setFillColor(245, 245, 245);
+    doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 50, 3, 3, 'FD');
+    
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text("PERIOD SUMMARY", margin + 10, yPos + 10);
+    
+    // Summary data
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Start Date: ${format(parseISO(summary.startDate), 'MM/dd/yyyy')}`, margin + 10, yPos + 20);
+    doc.text(`End Date: ${format(parseISO(summary.endDate), 'MM/dd/yyyy')}`, margin + 10, yPos + 30);
+    doc.text(`Total Employees: ${summary.count}`, margin + 10, yPos + 40);
+    
+    // Financial summary on the right side
+    doc.setFont('helvetica', 'bold');
+    doc.text("Total Payroll:", pageWidth - margin - 100, yPos + 20);
+    doc.text("Paid Amount:", pageWidth - margin - 100, yPos + 30);
+    doc.text("Pending Amount:", pageWidth - margin - 100, yPos + 40);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(formatCurrency(summary.total), pageWidth - margin - 10, yPos + 20, { align: 'right' });
+    doc.text(formatCurrency(summary.paid), pageWidth - margin - 10, yPos + 30, { align: 'right' });
+    doc.text(formatCurrency(summary.pending), pageWidth - margin - 10, yPos + 40, { align: 'right' });
+    
+    yPos += 60;
+    
+    // Filter payroll records for this period
+    const periodPayrolls = payrollRecords?.filter((record: PayrollType) => record.period === period) || [];
+    
+    // Employee Details Table
+    const tableHeaders = ["Employee", "Base Salary", "Overtime", "Bonus", "Deductions", "Tax", "Net Salary", "Status"];
+    const tableData = periodPayrolls.map((record: PayrollType) => [
+      getEmployeeName(record.employeeId),
+      formatCurrency(record.baseSalary),
+      formatCurrency(record.overtimePay),
+      formatCurrency(record.bonus),
+      formatCurrency(record.deductions),
+      formatCurrency(record.taxWithholding),
+      formatCurrency(record.netSalary),
+      record.status
+    ]);
+    
+    autoTable(doc, {
+      startY: yPos,
+      head: [tableHeaders],
+      body: tableData,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [220, 230, 240],
+        textColor: [0, 0, 0],
+        fontStyle: 'bold'
+      },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'auto',
+        cellPadding: 2,
+        fontSize: 8
+      },
+      columnStyles: {
+        0: { cellWidth: 40 },
+        1: { halign: 'right' },
+        2: { halign: 'right' },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+        5: { halign: 'right' },
+        6: { halign: 'right' },
+        7: { cellWidth: 20 }
+      }
+    });
+    
+    yPos = (doc as any).lastAutoTable.finalY + 15;
+    
+    // Status Summary
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text("STATUS SUMMARY", margin, yPos);
+    yPos += 8;
+    
+    // Count payroll records by status
+    const statusCounts: Record<string, number> = {
+      'Draft': 0,
+      'Pending': 0,
+      'Approved': 0,
+      'Paid': 0
+    };
+    
+    periodPayrolls.forEach((record: PayrollType) => {
+      statusCounts[record.status]++;
+    });
+    
+    const statusData = [
+      ["Status", "Count"],
+      ["Draft", statusCounts.Draft.toString()],
+      ["Pending", statusCounts.Pending.toString()],
+      ["Approved", statusCounts.Approved.toString()],
+      ["Paid", statusCounts.Paid.toString()],
+      ["Total", periodPayrolls.length.toString()]
+    ];
+    
+    autoTable(doc, {
+      startY: yPos,
+      head: [statusData[0]],
+      body: statusData.slice(1),
+      theme: 'grid',
+      headStyles: {
+        fillColor: [220, 230, 240],
+        textColor: [0, 0, 0],
+        fontStyle: 'bold'
+      },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'auto',
+        cellPadding: 3
+      },
+      columnStyles: {
+        0: { cellWidth: 100 },
+        1: { halign: 'center' }
+      },
+      margin: { left: margin, right: margin + 100 }
+    });
+    
+    // Footer
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'italic');
+    doc.text("Generated on: " + format(new Date(), 'MM/dd/yyyy HH:mm:ss'), margin, pageHeight - 20);
+    doc.text("Page 1 of 1", pageWidth - margin, pageHeight - 20, { align: 'right' });
+    
+    // Save the PDF
+    const fileName = `Payroll_Summary_${period}.pdf`;
+    doc.save(fileName);
+  };
+
   // Filter displayed records based on search term
   const filteredRecords = searchTerm.trim() 
     ? payrollRecords?.filter((record: PayrollType) => {
@@ -740,45 +1294,46 @@ const PayrollPage: React.FC = () => {
                         </TableCell>
                         <TableCell>{getStatusChip(record.status)}</TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex' }}>
-                            <Tooltip title="Edit Payroll">
-                              <IconButton 
-                                size="small" 
-                                onClick={() => handleOpenDialog(record)}
-                                color="primary"
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Print Payslip">
-                              <IconButton 
-                                size="small" 
-                                color="info"
-                              >
-                                <PictureAsPdfIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="primary"
+                              onClick={() => handleOpenDialog(record)}
+                            >
+                              Edit
+                            </Button>
+                            
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="info"
+                              startIcon={<DownloadIcon />}
+                              onClick={() => generatePayslipPDF(record)}
+                            >
+                              Payslip
+                            </Button>
+                            
                             {record.status !== 'Paid' && (
-                              <Tooltip title="Mark as Paid">
-                                <IconButton 
-                                  size="small" 
-                                  onClick={() => handleChangePayrollStatus(record.id, 'Paid')}
-                                  color="success"
-                                >
-                                  <AccountBalanceWalletIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="success"
+                                onClick={() => handleChangePayrollStatus(record.id, 'Paid')}
+                              >
+                                Mark Paid
+                              </Button>
                             )}
+                            
                             {record.status === 'Draft' && (
-                              <Tooltip title="Delete">
-                                <IconButton 
-                                  size="small" 
-                                  onClick={() => handleDelete(record.id)}
-                                  color="error"
-                                >
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="error"
+                                onClick={() => handleDelete(record.id)}
+                              >
+                                Delete
+                              </Button>
                             )}
                           </Box>
                         </TableCell>
@@ -943,10 +1498,10 @@ const PayrollPage: React.FC = () => {
                             <Typography variant="subtitle2">Period Details</Typography>
                             <Box sx={{ mt: 1 }}>
                               <Typography variant="body2">
-                                Start Date: {format(parseISO(summary.startDate), 'MMM d, yyyy')}
+                                Start Date: {format(parseISO(summary.startDate), 'MM/dd/yyyy')}
                               </Typography>
                               <Typography variant="body2">
-                                End Date: {format(parseISO(summary.endDate), 'MMM d, yyyy')}
+                                End Date: {format(parseISO(summary.endDate), 'MM/dd/yyyy')}
                               </Typography>
                               <Typography variant="body2">
                                 Number of Employees: {summary.count}
@@ -970,8 +1525,10 @@ const PayrollPage: React.FC = () => {
                           <Grid item xs={12} sx={{ mt: 1 }}>
                             <Button 
                               size="small" 
-                              startIcon={<PictureAsPdfIcon />}
                               variant="outlined"
+                              color="primary"
+                              startIcon={<DownloadIcon />}
+                              onClick={() => generatePeriodReport(summary.period, summary)}
                             >
                               Generate Period Report
                             </Button>
@@ -992,7 +1549,7 @@ const PayrollPage: React.FC = () => {
 
       {/* Add/Edit Payroll Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth={isBulkMode ? "lg" : "md"} fullWidth>
-        <DialogTitle>
+      <DialogTitle>
           {isBulkMode ? 'Bulk Payroll Generation' : (selectedPayroll ? 'Edit Payroll Record' : 'Add New Payroll Record')}
         </DialogTitle>
         
@@ -1007,7 +1564,7 @@ const PayrollPage: React.FC = () => {
                       views={['year', 'month']}
                       value={bulkPayrollDate}
                       onChange={handleBulkDateChange}
-                      slotProps={{ textField: { fullWidth: true, helperText: `${format(startOfMonth(bulkPayrollDate), 'MMM d, yyyy')} - ${format(endOfMonth(bulkPayrollDate), 'MMM d, yyyy')}` } }}
+                      slotProps={{ textField: { fullWidth: true, helperText: `${format(startOfMonth(bulkPayrollDate), 'MM/dd/yyyy')} - ${format(endOfMonth(bulkPayrollDate), 'MM/dd/yyyy')}` } }}
                     />
                   </LocalizationProvider>
                 </Box>
@@ -1165,7 +1722,7 @@ const PayrollPage: React.FC = () => {
                     }}
                     slotProps={{ textField: { 
                       fullWidth: true,
-                      helperText: `${format(formData.startDate, 'MMM d, yyyy')} - ${format(formData.endDate, 'MMM d, yyyy')}`
+                      helperText: `${format(formData.startDate, 'MM/dd/yyyy')} - ${format(formData.endDate, 'MM/dd/yyyy')}`
                     } }}
                   />
                 </LocalizationProvider>
