@@ -1,50 +1,29 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import apiClient from './apiClient';
-import { Attendance, AttendanceFilters, attendanceService } from '../../services/attendanceService';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { attendanceService, Attendance, InsertAttendance, AttendanceFilters } from '../../services/attendanceService';
+import { RootState } from '../store';
 
 interface AttendanceState {
   attendanceRecords: Attendance[];
-  currentRecord: Attendance | null;
+  selectedAttendance: Attendance | null;
   isLoading: boolean;
   error: string | null;
 }
 
 const initialState: AttendanceState = {
   attendanceRecords: [],
-  currentRecord: null,
+  selectedAttendance: null,
   isLoading: false,
   error: null
 };
 
+// Async thunks
 export const fetchAttendance = createAsyncThunk(
   'attendance/fetchAttendance',
-  async (filters: AttendanceFilters | undefined = undefined, { rejectWithValue }) => {
+  async (filters: AttendanceFilters = {}, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get('/attendance', { params: filters });
-      return response.data.data;
-    } catch (error: any) {
-      console.log('API error, falling back to direct service:', error);
-      try {
-        return await attendanceService.getAttendance(filters);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch attendance records');
-      }
-    }
-  }
-);
-
-export const fetchAttendanceByEmployeeId = createAsyncThunk(
-  'attendance/fetchAttendanceByEmployeeId',
-  async (employeeId: number, { rejectWithValue }) => {
-    try {
-      const response = await apiClient.get(`/attendance/employee/${employeeId}`);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await attendanceService.getAttendanceByEmployeeId(employeeId);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch employee attendance records');
-      }
+      return await attendanceService.getAttendance(filters);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch attendance records');
     }
   }
 );
@@ -53,63 +32,42 @@ export const fetchAttendanceById = createAsyncThunk(
   'attendance/fetchAttendanceById',
   async (id: number, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`/attendance/${id}`);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await attendanceService.getAttendanceById(id);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to fetch attendance record');
-      }
+      return await attendanceService.getAttendanceById(id);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to fetch attendance record');
     }
   }
 );
 
 export const createAttendance = createAsyncThunk(
   'attendance/createAttendance',
-  async (attendanceData: Omit<Attendance, 'id' | 'createdAt' | 'updatedAt' | 'employeeName'>, { rejectWithValue }) => {
+  async (attendance: InsertAttendance, { rejectWithValue }) => {
     try {
-      const response = await apiClient.post('/attendance', attendanceData);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await attendanceService.createAttendance(attendanceData);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to create attendance record');
-      }
-    }
-  }
-);
-
-export const updateAttendance = createAsyncThunk(
-  'attendance/updateAttendance',
-  async ({ id, data }: { id: number; data: Partial<Attendance> }, { rejectWithValue }) => {
-    try {
-      const response = await apiClient.put(`/attendance/${id}`, data);
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        return await attendanceService.updateAttendance(id, data);
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to update attendance record');
-      }
+      return await attendanceService.createAttendance(attendance);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to create attendance record');
     }
   }
 );
 
 export const bulkCreateAttendance = createAsyncThunk(
   'attendance/bulkCreateAttendance',
-  async (attendanceRecords: Array<Omit<Attendance, 'id' | 'createdAt' | 'updatedAt' | 'employeeName'>>, { rejectWithValue }) => {
+  async (attendanceRecords: InsertAttendance[], { rejectWithValue }) => {
     try {
-      const response = await apiClient.post('/attendance/bulk', { records: attendanceRecords });
-      return response.data.data;
-    } catch (error: any) {
-      try {
-        const count = await attendanceService.bulkCreateAttendance(attendanceRecords);
-        return { count };
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to create attendance records in bulk');
-      }
+      return await attendanceService.bulkCreateAttendance(attendanceRecords);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to create bulk attendance records');
+    }
+  }
+);
+
+export const updateAttendance = createAsyncThunk(
+  'attendance/updateAttendance',
+  async ({ id, data }: { id: number; data: Partial<InsertAttendance> }, { rejectWithValue }) => {
+    try {
+      return await attendanceService.updateAttendance(id, data);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to update attendance record');
     }
   }
 );
@@ -118,140 +76,131 @@ export const deleteAttendance = createAsyncThunk(
   'attendance/deleteAttendance',
   async (id: number, { rejectWithValue }) => {
     try {
-      await apiClient.delete(`/attendance/${id}`);
+      await attendanceService.deleteAttendance(id);
       return id;
-    } catch (error: any) {
-      try {
-        await attendanceService.deleteAttendance(id);
-        return id;
-      } catch (serviceError: any) {
-        return rejectWithValue(serviceError.message || 'Failed to delete attendance record');
-      }
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to delete attendance record');
     }
   }
 );
 
+// Create the slice
 const attendanceSlice = createSlice({
   name: 'attendance',
   initialState,
   reducers: {
-    clearCurrentRecord: (state) => {
-      state.currentRecord = null;
+    setSelectedAttendance: (state, action: PayloadAction<Attendance | null>) => {
+      state.selectedAttendance = action.payload;
     },
     clearError: (state) => {
       state.error = null;
-    }
+    },
   },
   extraReducers: (builder) => {
     builder
       // Fetch all attendance records
       .addCase(fetchAttendance.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchAttendance.fulfilled, (state, action) => {
         state.isLoading = false;
         state.attendanceRecords = action.payload;
+        state.error = null;
       })
       .addCase(fetchAttendance.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
       
-      // Fetch attendance by employee ID
-      .addCase(fetchAttendanceByEmployeeId.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(fetchAttendanceByEmployeeId.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.attendanceRecords = action.payload;
-      })
-      .addCase(fetchAttendanceByEmployeeId.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
-      })
-      
-      // Fetch single attendance record
+      // Fetch attendance by ID
       .addCase(fetchAttendanceById.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(fetchAttendanceById.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.currentRecord = action.payload;
+        state.selectedAttendance = action.payload;
+        state.error = null;
       })
       .addCase(fetchAttendanceById.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
       
-      // Create attendance record
+      // Create attendance
       .addCase(createAttendance.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(createAttendance.fulfilled, (state, action) => {
         state.isLoading = false;
         state.attendanceRecords.unshift(action.payload);
-        state.currentRecord = action.payload;
+        state.error = null;
       })
       .addCase(createAttendance.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
       
-      // Update attendance record
-      .addCase(updateAttendance.pending, (state) => {
-        state.isLoading = true;
-        state.error = null;
-      })
-      .addCase(updateAttendance.fulfilled, (state, action) => {
-        state.isLoading = false;
-        const index = state.attendanceRecords.findIndex(record => record.id === action.payload.id);
-        if (index !== -1) {
-          state.attendanceRecords[index] = action.payload;
-        }
-        state.currentRecord = action.payload;
-      })
-      .addCase(updateAttendance.rejected, (state, action) => {
-        state.isLoading = false;
-        state.error = action.payload as string;
-      })
-      
-      // Bulk create attendance records
+      // Bulk create attendance
       .addCase(bulkCreateAttendance.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
-      .addCase(bulkCreateAttendance.fulfilled, (state) => {
+      .addCase(bulkCreateAttendance.fulfilled, (state, action) => {
         state.isLoading = false;
-        // Note: we don't update state here because we'd need to fetch the records again 
-        // to get the IDs and full data
+        state.attendanceRecords = [...action.payload, ...state.attendanceRecords];
+        state.error = null;
       })
       .addCase(bulkCreateAttendance.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
       
-      // Delete attendance record
+      // Update attendance
+      .addCase(updateAttendance.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(updateAttendance.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const updatedAttendance = action.payload;
+        const index = state.attendanceRecords.findIndex(record => record.id === updatedAttendance.id);
+        if (index !== -1) {
+          state.attendanceRecords[index] = updatedAttendance;
+        }
+        if (state.selectedAttendance?.id === updatedAttendance.id) {
+          state.selectedAttendance = updatedAttendance;
+        }
+        state.error = null;
+      })
+      .addCase(updateAttendance.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+      
+      // Delete attendance
       .addCase(deleteAttendance.pending, (state) => {
         state.isLoading = true;
-        state.error = null;
       })
       .addCase(deleteAttendance.fulfilled, (state, action) => {
         state.isLoading = false;
         state.attendanceRecords = state.attendanceRecords.filter(record => record.id !== action.payload);
-        if (state.currentRecord && state.currentRecord.id === action.payload) {
-          state.currentRecord = null;
+        if (state.selectedAttendance?.id === action.payload) {
+          state.selectedAttendance = null;
         }
+        state.error = null;
       })
       .addCase(deleteAttendance.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       });
-  }
+  },
 });
 
-export const { clearCurrentRecord, clearError } = attendanceSlice.actions;
+export const { setSelectedAttendance, clearError } = attendanceSlice.actions;
 export default attendanceSlice.reducer;
+
+// Selectors
+export const selectAllAttendance = (state: RootState) => state.attendance.attendanceRecords;
+export const selectAttendanceById = (state: RootState, recordId: number) => 
+  state.attendance.attendanceRecords.find(record => record.id === recordId);
+export const selectSelectedAttendance = (state: RootState) => state.attendance.selectedAttendance;
+export const selectAttendanceLoading = (state: RootState) => state.attendance.isLoading;
+export const selectAttendanceError = (state: RootState) => state.attendance.error;
