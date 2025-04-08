@@ -21,13 +21,51 @@ import {
 } from '../redux/slices/attendanceSlice';
 import { fetchEmployees } from '../redux/slices/employeesSlice';
 import { Attendance, AttendanceFilters } from '../services/attendanceService';
-import { format, isToday, isYesterday, parseISO, addDays, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
+import { format, isToday, isYesterday, parseISO, addDays, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addMonths, subMonths, isSameDay } from 'date-fns';
 import { Employee } from '../services/employeesService';
 import * as XLSX from 'xlsx';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
   Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell 
 } from 'recharts';
+
+// Utility function to parse time strings
+const parseTimeString = (timeStr: string | null): Date | null => {
+  if (!timeStr) return null;
+  
+  const today = new Date();
+  
+  // Check if time is in 12-hour format (e.g., "7:30 AM")
+  if (timeStr.includes('AM') || timeStr.includes('PM')) {
+    const [timePart, meridiem] = timeStr.split(' ');
+    const [hours, minutes] = timePart.split(':').map(Number);
+    
+    const date = new Date();
+    let hour = hours;
+    
+    // Convert to 24-hour format if PM
+    if (meridiem === 'PM' && hours < 12) {
+      hour += 12;
+    } else if (meridiem === 'AM' && hours === 12) {
+      hour = 0;
+    }
+    
+    date.setHours(hour, minutes || 0, 0, 0);
+    return date;
+  }
+  
+  // If it's already in 24-hour format (e.g., "14:30")
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes || 0, 0, 0);
+  return date;
+};
+
+// Function to format dates in MM/DD/YYYY format
+const formatDateMMDDYYYY = (date: Date | string): string => {
+  const d = typeof date === 'string' ? parseISO(date) : date;
+  return format(d, 'MM/dd/yyyy');
+};
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -80,6 +118,273 @@ interface BulkAttendanceRow {
   notes: string;
 }
 
+// Daily Attendance Banner Component
+const DailyAttendanceBanner: React.FC<{
+  filters: AttendanceFilters;
+  filteredRecords: Attendance[];
+  employees: any[];
+  applyDateRange: (range: 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth') => void;
+  openBulkDialog: () => void;
+  setBulkDate: (date: Date) => void;
+  setBulkAttendanceData: (data: BulkAttendanceRow[]) => void;
+  setIsBulkMode: (mode: boolean) => void;
+  setOpenDialog: (open: boolean) => void;
+  getEmployeeName: (employeeId: number) => string;
+}> = ({
+  filters,
+  filteredRecords,
+  employees,
+  applyDateRange,
+  openBulkDialog,
+  setBulkDate,
+  setBulkAttendanceData,
+  setIsBulkMode,
+  setOpenDialog,
+  getEmployeeName
+}) => {
+  const activeEmployees = employees?.filter(e => e.status !== 'Inactive') || [];
+  const currentDate = filters.startDate ? parseISO(filters.startDate) : new Date();
+  const isCurrentDay = isSameDay(currentDate, new Date());
+  
+  // Calculate employees with missing attendance for today
+  const employeesWithAttendance = new Set(filteredRecords.map(r => r.employeeId));
+  const missingEmployees = activeEmployees.filter(emp => !employeesWithAttendance.has(Number(emp.id)));
+  
+  // Function to repeat attendance pattern from selected date
+  const repeatAttendancePattern = () => {
+    // Get employees present on the selected date
+    const dateToRepeat = filters.startDate || '';
+    const recordsToRepeat = filteredRecords.filter(r => 
+      r.status === 'Present' || r.status === 'Late'
+    );
+    
+    // Initialize bulk attendance with these employees
+    if (recordsToRepeat.length > 0) {
+      const initialData = recordsToRepeat.map(record => {
+        // Parse time strings to Date objects
+        const morningIn = record.timeIn ? parseTimeString(record.timeIn) : null;
+        const afternoonOut = record.timeOut ? parseTimeString(record.timeOut) : null;
+        
+        // Extract morning and afternoon times from notes if available
+        let morningOut = null;
+        let afternoonIn = null;
+        
+        if (record.notes && record.notes.includes('Morning:')) {
+          const noteParts = record.notes.split('\n');
+          const timeParts = noteParts[0].split(',');
+          
+          // Extract morning times
+          if (timeParts[0].includes('Morning:')) {
+            const morningTimes = timeParts[0].replace('Morning:', '').trim().split('-');
+            if (morningTimes.length === 2 && morningTimes[1].trim() !== 'N/A') {
+              morningOut = parseTimeString(morningTimes[1].trim());
+            }
+          }
+          
+          // Extract afternoon times
+          if (timeParts.length > 1 && timeParts[1].includes('Afternoon:')) {
+            const afternoonTimes = timeParts[1].replace('Afternoon:', '').trim().split('-');
+            if (afternoonTimes.length === 2 && afternoonTimes[0].trim() !== 'N/A') {
+              afternoonIn = parseTimeString(afternoonTimes[0].trim());
+            }
+          }
+        }
+        
+        return {
+          employeeId: record.employeeId,
+          employeeName: record.employeeName || getEmployeeName(record.employeeId),
+          present: true,
+          morningTimeIn: morningIn,
+          morningTimeOut: morningOut,
+          afternoonTimeIn: afternoonIn,
+          afternoonTimeOut: afternoonOut,
+          status: record.status as any,
+          overtime: record.overtime || 0,
+          notes: `Pattern repeated from ${formatDateMMDDYYYY(dateToRepeat)}`,
+        };
+      });
+      
+      setBulkAttendanceData(initialData);
+      setBulkDate(new Date());
+      setIsBulkMode(true);
+      setOpenDialog(true);
+    }
+  };
+  
+  // Create quick buttons for handling missing employees
+  const handleAddMissingEmployees = () => {
+    if (missingEmployees.length === 0) return;
+    
+    const initialData: BulkAttendanceRow[] = missingEmployees.map(emp => ({
+      employeeId: Number(emp.id),
+      employeeName: `${emp.firstName} ${emp.lastName}`,
+      present: true,
+      morningTimeIn: new Date(new Date().setHours(7, 0, 0, 0)),
+      morningTimeOut: new Date(new Date().setHours(12, 0, 0, 0)),
+      afternoonTimeIn: new Date(new Date().setHours(13, 0, 0, 0)),
+      afternoonTimeOut: new Date(new Date().setHours(18, 0, 0, 0)),
+      status: 'Present' as const,
+      overtime: 0,
+      notes: '',
+    }));
+    
+    setBulkAttendanceData(initialData);
+    setBulkDate(new Date());
+    setIsBulkMode(true);
+    setOpenDialog(true);
+  };
+  
+  return (
+    <Paper sx={{ p: 2, mb: 3, bgcolor: isCurrentDay ? 'primary.light' : 'background.paper' }}>
+      <Grid container alignItems="center" spacing={2}>
+        <Grid item xs={12} md={6}>
+          <Typography variant="h6" color={isCurrentDay ? 'primary.contrastText' : 'primary'}>
+            {isCurrentDay ? 
+              "Today's Attendance" : 
+              isYesterday(currentDate) ?
+                "Yesterday's Attendance" :
+                `Attendance for ${formatDateMMDDYYYY(currentDate)}`
+            }
+          </Typography>
+          
+          <Box sx={{ mt: 1 }}>
+            {filteredRecords?.length > 0 && activeEmployees?.length > 0 && (
+              <Typography variant="body2" color={isCurrentDay ? 'primary.contrastText' : 'text.secondary'}>
+                <strong>{filteredRecords.length}</strong> of <strong>{activeEmployees.length}</strong> employees recorded
+                {missingEmployees.length > 0 && isCurrentDay && (
+                  <Button 
+                    variant="text" 
+                    size="small"
+                    color="inherit"
+                    onClick={handleAddMissingEmployees}
+                    sx={{ ml: 1, textDecoration: 'underline' }}
+                  >
+                    Add {missingEmployees.length} missing
+                  </Button>
+                )}
+              </Typography>
+            )}
+            
+            {!filteredRecords?.length && (
+              <Typography variant="body2" color={isCurrentDay ? 'primary.contrastText' : 'error'}>
+                No attendance records found for this date.
+              </Typography>
+            )}
+          </Box>
+        </Grid>
+        
+        <Grid item xs={12} md={6}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexWrap: 'wrap' }}>
+            <Button 
+              variant={isCurrentDay ? "contained" : "outlined"}
+              color={isCurrentDay ? "secondary" : "primary"}
+              onClick={() => applyDateRange('today')}
+            >
+              Today
+            </Button>
+            
+            <Button 
+              variant={isYesterday(currentDate) ? "contained" : "outlined"}
+              color={isYesterday(currentDate) ? "secondary" : "primary"}
+              onClick={() => applyDateRange('yesterday')}
+            >
+              Yesterday
+            </Button>
+            
+            {!isCurrentDay && filteredRecords.length > 0 && (
+              <Button 
+                variant="outlined"
+                color="primary"
+                onClick={repeatAttendancePattern}
+                startIcon={<RefreshIcon />}
+              >
+                Use This Pattern Today
+              </Button>
+            )}
+            
+            {isCurrentDay && (
+              <Button 
+                variant="contained"
+                color="primary"
+                onClick={openBulkDialog}
+                startIcon={<AddIcon />}
+              >
+                Bulk Entry
+              </Button>
+            )}
+          </Box>
+        </Grid>
+      </Grid>
+    </Paper>
+  );
+};
+
+// Missing Employees Component
+const MissingEmployeesSection: React.FC<{
+  employees: any[];
+  filteredRecords: Attendance[];
+  currentDate: Date;
+  handleAddMissingEmployees: () => void;
+}> = ({
+  employees,
+  filteredRecords,
+  currentDate,
+  handleAddMissingEmployees
+}) => {
+  // Only show for today's date
+  if (!isSameDay(currentDate, new Date())) return null;
+  
+  const activeEmployees = employees?.filter(e => e.status !== 'Inactive') || [];
+  
+  // Calculate employees with missing attendance
+  const employeesWithAttendance = new Set(filteredRecords.map(r => r.employeeId));
+  const missingEmployees = activeEmployees.filter(emp => !employeesWithAttendance.has(Number(emp.id)));
+  
+  // Don't show if no missing employees
+  if (missingEmployees.length === 0) return null;
+  
+  return (
+    <Paper sx={{ p: 2, mb: 3, bgcolor: 'warning.light' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box>
+          <Typography variant="h6" color="warning.contrastText">
+            Employees Missing Attendance: {missingEmployees.length}
+          </Typography>
+          <Typography variant="body2" color="warning.contrastText">
+            The following employees don't have attendance records for today:
+          </Typography>
+        </Box>
+        
+        <Button 
+          variant="contained" 
+          color="warning"
+          onClick={handleAddMissingEmployees}
+        >
+          Add All Missing
+        </Button>
+      </Box>
+      
+      <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+        {missingEmployees.slice(0, 10).map((emp) => (
+          <Chip 
+            key={emp.id}
+            label={`${emp.firstName} ${emp.lastName}`}
+            color="default"
+            variant="outlined"
+          />
+        ))}
+        {missingEmployees.length > 10 && (
+          <Chip 
+            label={`+${missingEmployees.length - 10} more`}
+            color="default"
+            variant="outlined"
+          />
+        )}
+      </Box>
+    </Paper>
+  );
+};
+
 // Custom color palette for charts
 const CHART_COLORS = {
   present: '#4caf50',
@@ -105,8 +410,8 @@ const AttendanceLists: React.FC = () => {
   const [selectedAttendance, setSelectedAttendance] = useState<Attendance | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filters, setFilters] = useState<AttendanceFilters>({
-    startDate: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
-    endDate: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd'),
   });
 
   // Chart data states
@@ -203,7 +508,7 @@ const AttendanceLists: React.FC = () => {
         const dateStr = format(date, 'yyyy-MM-dd');
         dateMap.set(dateStr, {
           date: dateStr,
-          displayDate: format(date, 'MMM dd'),
+          displayDate: format(date, 'MM/dd'),
           present: 0,
           absent: 0,
           late: 0,
@@ -257,7 +562,7 @@ const AttendanceLists: React.FC = () => {
       const date = new Date(day.date);
       const weekStart = format(startOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd');
       const weekEnd = format(endOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd');
-      const weekKey = `${format(date, 'MMM dd')}-${format(endOfWeek(date, { weekStartsOn: 1 }), 'MMM dd')}`;
+      const weekKey = `${format(date, 'MM/dd')}-${format(endOfWeek(date, { weekStartsOn: 1 }), 'MM/dd')}`;
       
       if (!weeklyData.has(weekKey)) {
         weeklyData.set(weekKey, {
@@ -650,17 +955,8 @@ const AttendanceLists: React.FC = () => {
   };
 
   const handleSearch = () => {
-    const searched = attendanceRecords?.filter((record: Attendance) => {
-      const lowerSearch = searchTerm.toLowerCase();
-      return (
-        (record.employeeName?.toLowerCase().includes(lowerSearch)) ||
-        record.status.toLowerCase().includes(lowerSearch) ||
-        (record.notes && record.notes.toLowerCase().includes(lowerSearch))
-      );
-    });
-    
-    // TODO: Implement search functionality
-    console.log("Searched records:", searched);
+    // We're already handling the search filter directly in the filteredRecords computation
+    console.log("Search term applied:", searchTerm);
   };
 
   const getStatusChip = (status: string) => {
@@ -708,13 +1004,68 @@ const AttendanceLists: React.FC = () => {
     } else if (isYesterday(date)) {
       return 'Yesterday';
     } else {
-      return format(date, 'MMM d, yyyy');
+      return formatDateMMDDYYYY(date);
     }
   };
 
   const getEmployeeName = (employeeId: number) => {
     const employee = employees?.find((emp: any) => Number(emp.id) === employeeId);
     return employee ? `${employee.firstName} ${employee.lastName}` : 'Unknown Employee';
+  };
+
+  // Function to handle adding missing employees to attendance
+  const handleAddMissingEmployees = () => {
+    if (employees?.length === 0) return;
+    
+    // Create a list of employees without attendance records
+    const employeesWithAttendance: Set<number> = new Set(filteredRecords.map((r: Attendance) => r.employeeId));
+    interface MissingEmployee {
+      employeeId: number;
+      employeeName: string;
+      present: boolean;
+      morningTimeIn: Date;
+      morningTimeOut: Date;
+      afternoonTimeIn: Date;
+      afternoonTimeOut: Date;
+      status: 'Present';
+      overtime: number;
+      notes: string;
+    }
+
+    interface MissingEmployee {
+      employeeId: number;
+      employeeName: string;
+      present: boolean;
+      morningTimeIn: Date;
+      morningTimeOut: Date;
+      afternoonTimeIn: Date;
+      afternoonTimeOut: Date;
+      status: 'Present';
+      overtime: number;
+      notes: string;
+    }
+
+    const missingEmployees: MissingEmployee[] = employees
+      .filter((emp: { id: number; status: string; firstName: string; lastName: string }) => emp.status !== 'Inactive' && !employeesWithAttendance.has(Number(emp.id)))
+      .map((emp: { id: number; firstName: string; lastName: string }) => ({
+      employeeId: Number(emp.id),
+      employeeName: `${emp.firstName} ${emp.lastName}`,
+      present: true,
+      morningTimeIn: new Date(new Date().setHours(7, 0, 0, 0)),
+      morningTimeOut: new Date(new Date().setHours(12, 0, 0, 0)),
+      afternoonTimeIn: new Date(new Date().setHours(13, 0, 0, 0)),
+      afternoonTimeOut: new Date(new Date().setHours(18, 0, 0, 0)),
+      status: 'Present' as const,
+      overtime: 0,
+      notes: '',
+      }));
+    
+    if (missingEmployees.length > 0) {
+      setBulkAttendanceData(missingEmployees);
+      setBulkDate(new Date());
+      setIsBulkMode(true);
+      setOpenDialog(true);
+    }
   };
 
   // Excel Export Functions
@@ -800,7 +1151,7 @@ const AttendanceLists: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance Summary');
     
     // Generate a report title with date range
-    const reportTitle = `Attendance Summary (${filters.startDate} to ${filters.endDate})`;
+    const reportTitle = `Attendance Summary (${formatDateMMDDYYYY(filters.startDate || '')} to ${formatDateMMDDYYYY(filters.endDate || '')})`;
     
     // Save to file
     XLSX.writeFile(wb, `${reportTitle}.xlsx`);
@@ -866,7 +1217,7 @@ const AttendanceLists: React.FC = () => {
       
       employee.records.push({
         date: record.date,
-        formattedDate: format(parseISO(record.date), 'MMM dd, yyyy'),
+        formattedDate: formatDateMMDDYYYY(parseISO(record.date)),
         morningIn,
         morningOut,
         afternoonIn,
@@ -911,7 +1262,7 @@ const AttendanceLists: React.FC = () => {
         ['Employee Timesheet'],
         ['Employee Name:', employee.name],
         ['Employee ID:', empId],
-        ['Report Period:', `${filters.startDate} to ${filters.endDate}`],
+        ['Report Period:', `${formatDateMMDDYYYY(filters.startDate || '')} to ${formatDateMMDDYYYY(filters.endDate || '')}`],
         ['Total Days:', sortedRecords.length.toString()],
         ['']  // Empty row before the data
       ];
@@ -928,7 +1279,7 @@ const AttendanceLists: React.FC = () => {
     });
     
     // Save to file with date range in the filename
-    const reportTitle = `Employee Timesheets (${filters.startDate} to ${filters.endDate})`;
+    const reportTitle = `Employee Timesheets (${formatDateMMDDYYYY(filters.startDate || '')} to ${formatDateMMDDYYYY(filters.endDate || '')})`;
     XLSX.writeFile(wb, `${reportTitle}.xlsx`);
   };
 
@@ -959,7 +1310,7 @@ const AttendanceLists: React.FC = () => {
       
       employee.overtimeRecords.push({
         date: record.date,
-        formattedDate: format(parseISO(record.date), 'MMM dd, yyyy'),
+        formattedDate: formatDateMMDDYYYY(parseISO(record.date)),
         hours: record.overtime,
         status: record.status,
         notes: record.notes || ''
@@ -992,7 +1343,7 @@ const AttendanceLists: React.FC = () => {
     // Add title and date range
     XLSX.utils.sheet_add_aoa(summaryWs, [
       ['Overtime Summary Report'],
-      [`Period: ${filters.startDate} to ${filters.endDate}`],
+      [`Period: ${formatDateMMDDYYYY(filters.startDate || '')} to ${formatDateMMDDYYYY(filters.endDate || '')}`],
       ['']  // Empty row
     ], { origin: 'A1' });
     
@@ -1035,7 +1386,7 @@ const AttendanceLists: React.FC = () => {
     }
     
     // Save to file with date range in the filename
-    const reportTitle = `Overtime Report (${filters.startDate} to ${filters.endDate})`;
+    const reportTitle = `Overtime Report (${formatDateMMDDYYYY(filters.startDate || '')} to ${formatDateMMDDYYYY(filters.endDate || '')})`;
     XLSX.writeFile(wb, `${reportTitle}.xlsx`);
   };
 
@@ -1083,6 +1434,20 @@ const AttendanceLists: React.FC = () => {
         </Tabs>
         
         <TabPanel value={tabValue} index={0}>
+          {/* Daily Attendance Banner */}
+          <DailyAttendanceBanner
+            filters={filters}
+            filteredRecords={filteredRecords}
+            employees={employees}
+            applyDateRange={applyDateRange}
+            openBulkDialog={handleOpenBulkDialog}
+            setBulkDate={setBulkDate}
+            setBulkAttendanceData={setBulkAttendanceData}
+            setIsBulkMode={setIsBulkMode}
+            setOpenDialog={setOpenDialog}
+            getEmployeeName={getEmployeeName}
+          />
+          
           <Box sx={{ mb: 3 }}>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12} md={3}>
@@ -1168,6 +1533,16 @@ const AttendanceLists: React.FC = () => {
               </Grid>
             </Grid>
           </Box>
+          
+          {/* Missing Employees Section */}
+          {isToday(parseISO(filters.startDate || '')) && filteredRecords && (
+            <MissingEmployeesSection
+              employees={employees}
+              filteredRecords={filteredRecords}
+              currentDate={parseISO(filters.startDate || '')}
+              handleAddMissingEmployees={handleAddMissingEmployees}
+            />
+          )}
           
           {(loading || attendanceLoading || employeesLoading) ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
@@ -1467,13 +1842,13 @@ const AttendanceLists: React.FC = () => {
                             r.employeeId === Number(employee.id)
                           ) || [];
                           
-                            const presentCount: number = employeeRecords.filter((r: Attendance) => 
+                          const presentCount: number = employeeRecords.filter((r: Attendance) => 
                             r.status === 'Present' || r.status === 'Late'
-                            ).length;
+                          ).length;
                           
-                            const absentCount: number = employeeRecords.filter((r: Attendance) => 
+                          const absentCount: number = employeeRecords.filter((r: Attendance) => 
                             r.status === 'Absent'
-                            ).length;
+                          ).length;
                           
                           const attendanceRate = employeeRecords.length > 0 
                             ? Math.round((presentCount / employeeRecords.length) * 100) 
@@ -1523,615 +1898,615 @@ const AttendanceLists: React.FC = () => {
                         {employees && employees.slice(0, 5).map((employee: any) => {
                           const employeeRecords = attendanceRecords?.filter((r: Attendance) => 
                             r.employeeId === Number(employee.id)
-                        ) || [];
+                          ) || [];
                           
-                        const totalOvertime: number = employeeRecords.reduce((total: number, record: Attendance) => 
-                          total + (record.overtime || 0), 0
-                        );
+                          const totalOvertime: number = employeeRecords.reduce((total: number, record: Attendance) => 
+                            total + (record.overtime || 0), 0
+                          );
+                          
+                          const daysWithOvertime: number = employeeRecords.filter((r: Attendance) => 
+                            r.overtime && r.overtime > 0
+                          ).length;
+                            
+                          return (
+                            <TableRow key={employee.id}>
+                              <TableCell>{`${employee.firstName} ${employee.lastName}`}</TableCell>
+                              <TableCell>{`${totalOvertime} hours`}</TableCell>
+                              <TableCell>{daysWithOvertime}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              </Grid>
+              
+              <Grid item xs={12}>
+                <Paper sx={{ p: 2, mt: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6" color="primary">
+                      Export Reports
+                    </Typography>
+                  </Box>
+                  
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={4}>
+                      <Button 
+                        variant="outlined" 
+                        fullWidth
+                        startIcon={<DownloadIcon />}
+                        onClick={exportAttendanceSummary}
+                      >
+                        Attendance Summary
+                      </Button>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <Button 
+                        variant="outlined" 
+                        fullWidth
+                        startIcon={<DownloadIcon />}
+                        onClick={exportEmployeeTimesheet}
+                      >
+                        Employee Timesheet
+                      </Button>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <Button 
+                        variant="outlined" 
+                        fullWidth
+                        startIcon={<DownloadIcon />}
+                        onClick={exportOvertimeReport}
+                      >
+                        Overtime Report
+                      </Button>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Box>
+        </TabPanel>
+      </Paper>
+
+      {/* Add/Edit Attendance Dialog */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth={isBulkMode ? "lg" : "md"} fullWidth>
+        <DialogTitle>
+          {isBulkMode ? 'Bulk Attendance Entry' : (selectedAttendance ? 'Edit Attendance Record' : 'Add New Attendance Record')}
+        </DialogTitle>
+        
+        <DialogContent>
+          {isBulkMode ? (
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <Box sx={{ mb: 3, mt: 2 }}>
+                  <LocalizationProvider dateAdapter={AdapterDateFns}>
+                    <DatePicker
+                      label="Attendance Date"
+                      value={bulkDate}
+                      onChange={handleBulkDateChange}
+                      slotProps={{ textField: { fullWidth: true } }}
+                    />
+                  </LocalizationProvider>
+                </Box>
+                
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+                  <FormControl size="small" sx={{ width: 200 }}>
+                    <InputLabel>Preset Times</InputLabel>
+                    <Select
+                      value=""
+                      label="Preset Times"
+                      onChange={(e) => {
+                        // Apply preset times to all present employees
+                        const updatedData = [...bulkAttendanceData];
+                        const presetValue = e.target.value as string;
                         
-                        const daysWithOvertime: number = employeeRecords.filter((r: Attendance) => 
-                          r.overtime && r.overtime > 0
-                        ).length;
-                          
-                        return (
-                          <TableRow key={employee.id}>
-                            <TableCell>{`${employee.firstName} ${employee.lastName}`}</TableCell>
-                            <TableCell>{`${totalOvertime} hours`}</TableCell>
-                            <TableCell>{daysWithOvertime}</TableCell>
-                          </TableRow>
-                        );
-                      })}
+                        updatedData.forEach((row, idx) => {
+                          if (row.present) {
+                            if (presetValue === "standard") {
+                              // Standard 8-hour shift (7am-12pm, 1pm-5pm)
+                              const morningIn = new Date();
+                              morningIn.setHours(7, 0, 0, 0);
+                              
+                              const morningOut = new Date();
+                              morningOut.setHours(12, 0, 0, 0);
+                              
+                              const afternoonIn = new Date();
+                              afternoonIn.setHours(13, 0, 0, 0);
+                              
+                              const afternoonOut = new Date();
+                              afternoonOut.setHours(17, 0, 0, 0);
+                              
+                              updatedData[idx].morningTimeIn = morningIn;
+                              updatedData[idx].morningTimeOut = morningOut;
+                              updatedData[idx].afternoonTimeIn = afternoonIn;
+                              updatedData[idx].afternoonTimeOut = afternoonOut;
+                            }
+                            else if (presetValue === "extended") {
+                              // Extended 9-hour shift (7am-12pm, 1pm-6pm)
+                              const morningIn = new Date();
+                              morningIn.setHours(7, 0, 0, 0);
+                              
+                              const morningOut = new Date();
+                              morningOut.setHours(12, 0, 0, 0);
+                              
+                              const afternoonIn = new Date();
+                              afternoonIn.setHours(13, 0, 0, 0);
+                              
+                              const afternoonOut = new Date();
+                              afternoonOut.setHours(18, 0, 0, 0);
+                              
+                              updatedData[idx].morningTimeIn = morningIn;
+                              updatedData[idx].morningTimeOut = morningOut;
+                              updatedData[idx].afternoonTimeIn = afternoonIn;
+                              updatedData[idx].afternoonTimeOut = afternoonOut;
+                            }
+                            else if (presetValue === "late") {
+                              // Late arrival shift (8am-12pm, 1pm-6pm)
+                              const morningIn = new Date();
+                              morningIn.setHours(8, 0, 0, 0);
+                              
+                              const morningOut = new Date();
+                              morningOut.setHours(12, 0, 0, 0);
+                              
+                              const afternoonIn = new Date();
+                              afternoonIn.setHours(13, 0, 0, 0);
+                              
+                              const afternoonOut = new Date();
+                              afternoonOut.setHours(18, 0, 0, 0);
+                              
+                              updatedData[idx].morningTimeIn = morningIn;
+                              updatedData[idx].morningTimeOut = morningOut;
+                              updatedData[idx].afternoonTimeIn = afternoonIn;
+                              updatedData[idx].afternoonTimeOut = afternoonOut;
+                              updatedData[idx].status = "Late";
+                            }
+                          }
+                        });
+                        
+                        setBulkAttendanceData(updatedData);
+                      }}
+                    >
+                      <MenuItem value="">Select preset</MenuItem>
+                      <MenuItem value="standard">Standard (7am-5pm)</MenuItem>
+                      <MenuItem value="extended">Extended (7am-6pm)</MenuItem>
+                      <MenuItem value="late">Late Arrival (8am-6pm)</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Box>
+                
+                <TableContainer sx={{ maxHeight: 500 }}>
+                  <Table stickyHeader size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ minWidth: 150 }}><strong>Employee</strong></TableCell>
+                        <TableCell><strong>Status</strong></TableCell>
+                        <TableCell colSpan={2} align="center" sx={{ bgcolor: 'rgba(0, 150, 136, 0.1)' }}>
+                          <Typography variant="subtitle2" color="primary">Morning Session</Typography>
+                        </TableCell>
+                        <TableCell colSpan={2} align="center" sx={{ bgcolor: 'rgba(63, 81, 181, 0.1)' }}>
+                          <Typography variant="subtitle2" color="primary">Afternoon Session</Typography>
+                        </TableCell>
+                        <TableCell><strong>OT (hrs)</strong></TableCell>
+                        <TableCell><strong>Notes</strong></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell></TableCell>
+                        <TableCell></TableCell>
+                        <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.05)' }}><strong>Time In</strong></TableCell>
+                        <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.05)' }}><strong>Time Out</strong></TableCell>
+                        <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.05)' }}><strong>Time In</strong></TableCell>
+                        <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.05)' }}><strong>Time Out</strong></TableCell>
+                        <TableCell></TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {bulkAttendanceData.map((row, index) => (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              {row.employeeName}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <FormControl fullWidth size="small">
+                              <Select
+                                value={row.status}
+                                onChange={(e) => handleBulkInputChange(index, 'status', e.target.value)}
+                                renderValue={(value) => (
+                                  <Chip
+                                    label={value}
+                                    color={
+                                      value === "Present" ? "success" : 
+                                      value === "Late" ? "warning" : 
+                                      value === "Half-day" ? "info" : 
+                                      value === "Absent" ? "error" : "default"
+                                    }
+                                    size="small"
+                                    variant="outlined"
+                                  />
+                                )}
+                              >
+                                <MenuItem value="Present">Present</MenuItem>
+                                <MenuItem value="Late">Late</MenuItem>
+                                <MenuItem value="Half-day">Half-day</MenuItem>
+                                <MenuItem value="Absent">Absent</MenuItem>
+                                <MenuItem value="On Leave">On Leave</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.03)' }}>
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                              <TimePicker
+                                value={row.morningTimeIn}
+                                onChange={(newTime) => handleBulkInputChange(index, 'morningTimeIn', newTime)}
+                                disabled={row.status === 'Absent' || row.status === 'On Leave'}
+                                slotProps={{ 
+                                  textField: { 
+                                    size: 'small',
+                                    placeholder: '7:00 AM',
+                                    sx: { width: '100%' }
+                                  }
+                                }}
+                                ampm={true}
+                              />
+                            </LocalizationProvider>
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.03)' }}>
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                              <TimePicker
+                                value={row.morningTimeOut}
+                                onChange={(newTime) => handleBulkInputChange(index, 'morningTimeOut', newTime)}
+                                disabled={row.status === 'Absent' || row.status === 'On Leave'}
+                                slotProps={{ 
+                                  textField: { 
+                                    size: 'small',
+                                    placeholder: '12:00 PM',
+                                    sx: { width: '100%' }
+                                  } 
+                                }}
+                                ampm={true}
+                              />
+                            </LocalizationProvider>
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.03)' }}>
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                              <TimePicker
+                                value={row.afternoonTimeIn}
+                                onChange={(newTime) => handleBulkInputChange(index, 'afternoonTimeIn', newTime)}
+                                disabled={row.status === 'Absent' || row.status === 'On Leave'}
+                                slotProps={{ 
+                                  textField: { 
+                                    size: 'small',
+                                    placeholder: '1:00 PM',
+                                    sx: { width: '100%' }
+                                  } 
+                                }}
+                                ampm={true}
+                              />
+                            </LocalizationProvider>
+                          </TableCell>
+                          <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.03)' }}>
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                              <TimePicker
+                                value={row.afternoonTimeOut}
+                                onChange={(newTime) => handleBulkInputChange(index, 'afternoonTimeOut', newTime)}
+                                disabled={row.status === 'Absent' || row.status === 'On Leave'}
+                                slotProps={{ 
+                                  textField: { 
+                                    size: 'small',
+                                    placeholder: '6:00 PM',
+                                    sx: { width: '100%' }
+                                  } 
+                                }}
+                                ampm={true}
+                              />
+                            </LocalizationProvider>
+                          </TableCell>
+                          <TableCell>
+                            <TextField
+                              type="number"
+                              value={row.overtime || 0}
+                              onChange={(e) => handleBulkInputChange(index, 'overtime', Number(e.target.value))}
+                              disabled={row.status === 'Absent' || row.status === 'On Leave'}
+                              size="small"
+                              sx={{ width: 60 }}
+                              InputProps={{
+                                inputProps: { min: 0, max: 12 }
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <TextField
+                              value={row.notes}
+                              onChange={(e) => handleBulkInputChange(index, 'notes', e.target.value)}
+                              size="small"
+                              placeholder="Optional notes"
+                              sx={{ minWidth: 120 }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </TableContainer>
-              </Paper>
+              </Grid>
             </Grid>
-            
-            <Grid item xs={12}>
-              <Paper sx={{ p: 2, mt: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Typography variant="h6" color="primary">
-                    Export Reports
-                  </Typography>
-                </Box>
-                
-                <Grid container spacing={2}>
-                  <Grid item xs={12} md={4}>
-                    <Button 
-                      variant="outlined" 
-                      fullWidth
-                      startIcon={<DownloadIcon />}
-                      onClick={exportAttendanceSummary}
-                    >
-                      Attendance Summary
-                    </Button>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Button 
-                      variant="outlined" 
-                      fullWidth
-                      startIcon={<DownloadIcon />}
-                      onClick={exportEmployeeTimesheet}
-                    >
-                      Employee Timesheet
-                    </Button>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Button 
-                      variant="outlined" 
-                      fullWidth
-                      startIcon={<DownloadIcon />}
-                      onClick={exportOvertimeReport}
-                    >
-                      Overtime Report
-                    </Button>
-                  </Grid>
-                </Grid>
-              </Paper>
-            </Grid>
-          </Grid>
-        </Box>
-      </TabPanel>
-    </Paper>
-
-    {/* Add/Edit Attendance Dialog */}
-    <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth={isBulkMode ? "lg" : "md"} fullWidth>
-      <DialogTitle>
-        {isBulkMode ? 'Bulk Attendance Entry' : (selectedAttendance ? 'Edit Attendance Record' : 'Add New Attendance Record')}
-      </DialogTitle>
-      
-      <DialogContent>
-        {isBulkMode ? (
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <Box sx={{ mb: 3, mt: 2 }}>
-                <LocalizationProvider dateAdapter={AdapterDateFns}>
+          ) : (
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="employee-label">Employee</InputLabel>
+                  <Select
+                    labelId="employee-label"
+                    name="employeeId"
+                    value={formData.employeeId}
+                    label="Employee"
+                    onChange={handleSelectChange}
+                    required
+                  >
+                    {employees && employees.length > 0 ? 
+                      employees
+                        .filter((emp: any) => emp.status !== 'Inactive')
+                        .map((employee: any) => (
+                          <MenuItem key={employee.id} value={employee.id}>
+                            {`${employee.firstName} ${employee.lastName}`}
+                          </MenuItem>
+                        )) : 
+                      <MenuItem disabled>No employees available</MenuItem>
+                    }
+                  </Select>
+                </FormControl>
+              </Grid>
+              
+              <Grid item xs={12} md={6}>
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
                   <DatePicker
                     label="Attendance Date"
-                    value={bulkDate}
-                    onChange={handleBulkDateChange}
+                    value={formData.date}
+                    onChange={handleDateChange}
                     slotProps={{ textField: { fullWidth: true } }}
                   />
                 </LocalizationProvider>
-              </Box>
+              </Grid>
               
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                <FormControl size="small" sx={{ width: 200 }}>
-                  <InputLabel>Preset Times</InputLabel>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="status-label">Status</InputLabel>
                   <Select
-                    value=""
-                    label="Preset Times"
-                    onChange={(e) => {
-                      // Apply preset times to all present employees
-                      const updatedData = [...bulkAttendanceData];
-                      const presetValue = e.target.value as string;
-                      
-                      updatedData.forEach((row, idx) => {
-                        if (row.present) {
-                          if (presetValue === "standard") {
-                            // Standard 8-hour shift (7am-12pm, 1pm-5pm)
-                            const morningIn = new Date();
-                            morningIn.setHours(7, 0, 0, 0);
-                            
-                            const morningOut = new Date();
-                            morningOut.setHours(12, 0, 0, 0);
-                            
-                            const afternoonIn = new Date();
-                            afternoonIn.setHours(13, 0, 0, 0);
-                            
-                            const afternoonOut = new Date();
-                            afternoonOut.setHours(17, 0, 0, 0);
-                            
-                            updatedData[idx].morningTimeIn = morningIn;
-                            updatedData[idx].morningTimeOut = morningOut;
-                            updatedData[idx].afternoonTimeIn = afternoonIn;
-                            updatedData[idx].afternoonTimeOut = afternoonOut;
-                          }
-                          else if (presetValue === "extended") {
-                            // Extended 9-hour shift (7am-12pm, 1pm-6pm)
-                            const morningIn = new Date();
-                            morningIn.setHours(7, 0, 0, 0);
-                            
-                            const morningOut = new Date();
-                            morningOut.setHours(12, 0, 0, 0);
-                            
-                            const afternoonIn = new Date();
-                            afternoonIn.setHours(13, 0, 0, 0);
-                            
-                            const afternoonOut = new Date();
-                            afternoonOut.setHours(18, 0, 0, 0);
-                            
-                            updatedData[idx].morningTimeIn = morningIn;
-                            updatedData[idx].morningTimeOut = morningOut;
-                            updatedData[idx].afternoonTimeIn = afternoonIn;
-                            updatedData[idx].afternoonTimeOut = afternoonOut;
-                          }
-                          else if (presetValue === "late") {
-                            // Late arrival shift (8am-12pm, 1pm-6pm)
-                            const morningIn = new Date();
-                            morningIn.setHours(8, 0, 0, 0);
-                            
-                            const morningOut = new Date();
-                            morningOut.setHours(12, 0, 0, 0);
-                            
-                            const afternoonIn = new Date();
-                            afternoonIn.setHours(13, 0, 0, 0);
-                            
-                            const afternoonOut = new Date();
-                            afternoonOut.setHours(18, 0, 0, 0);
-                            
-                            updatedData[idx].morningTimeIn = morningIn;
-                            updatedData[idx].morningTimeOut = morningOut;
-                            updatedData[idx].afternoonTimeIn = afternoonIn;
-                            updatedData[idx].afternoonTimeOut = afternoonOut;
-                            updatedData[idx].status = "Late";
-                          }
-                        }
-                      });
-                      
-                      setBulkAttendanceData(updatedData);
-                    }}
+                    labelId="status-label"
+                    name="status"
+                    value={formData.status}
+                    label="Status"
+                    onChange={handleSelectChange}
                   >
-                    <MenuItem value="">Select preset</MenuItem>
-                    <MenuItem value="standard">Standard (7am-5pm)</MenuItem>
-                    <MenuItem value="extended">Extended (7am-6pm)</MenuItem>
-                    <MenuItem value="late">Late Arrival (8am-6pm)</MenuItem>
+                    <MenuItem value="Present">Present</MenuItem>
+                    <MenuItem value="Absent">Absent</MenuItem>
+                    <MenuItem value="Late">Late</MenuItem>
+                    <MenuItem value="Half-day">Half-day</MenuItem>
+                    <MenuItem value="On Leave">On Leave</MenuItem>
                   </Select>
                 </FormControl>
-              </Box>
+              </Grid>
               
-              <TableContainer sx={{ maxHeight: 500 }}>
-                <Table stickyHeader size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ minWidth: 150 }}><strong>Employee</strong></TableCell>
-                      <TableCell><strong>Status</strong></TableCell>
-                      <TableCell colSpan={2} align="center" sx={{ bgcolor: 'rgba(0, 150, 136, 0.1)' }}>
-                        <Typography variant="subtitle2" color="primary">Morning Session</Typography>
-                      </TableCell>
-                      <TableCell colSpan={2} align="center" sx={{ bgcolor: 'rgba(63, 81, 181, 0.1)' }}>
-                        <Typography variant="subtitle2" color="primary">Afternoon Session</Typography>
-                      </TableCell>
-                      <TableCell><strong>OT (hrs)</strong></TableCell>
-                      <TableCell><strong>Notes</strong></TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell></TableCell>
-                      <TableCell></TableCell>
-                      <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.05)' }}><strong>Time In</strong></TableCell>
-                      <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.05)' }}><strong>Time Out</strong></TableCell>
-                      <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.05)' }}><strong>Time In</strong></TableCell>
-                      <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.05)' }}><strong>Time Out</strong></TableCell>
-                      <TableCell></TableCell>
-                      <TableCell></TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {bulkAttendanceData.map((row, index) => (
-                      <TableRow key={index}>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            {row.employeeName}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <FormControl fullWidth size="small">
-                            <Select
-                              value={row.status}
-                              onChange={(e) => handleBulkInputChange(index, 'status', e.target.value)}
-                              renderValue={(value) => (
-                                <Chip
-                                  label={value}
-                                  color={
-                                    value === "Present" ? "success" : 
-                                    value === "Late" ? "warning" : 
-                                    value === "Half-day" ? "info" : 
-                                    value === "Absent" ? "error" : "default"
-                                  }
-                                  size="small"
-                                  variant="outlined"
-                                />
-                              )}
-                            >
-                              <MenuItem value="Present">Present</MenuItem>
-                              <MenuItem value="Late">Late</MenuItem>
-                              <MenuItem value="Half-day">Half-day</MenuItem>
-                              <MenuItem value="Absent">Absent</MenuItem>
-                              <MenuItem value="On Leave">On Leave</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </TableCell>
-                        <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.03)' }}>
-                          <LocalizationProvider dateAdapter={AdapterDateFns}>
-                            <TimePicker
-                              value={row.morningTimeIn}
-                              onChange={(newTime) => handleBulkInputChange(index, 'morningTimeIn', newTime)}
-                              disabled={row.status === 'Absent' || row.status === 'On Leave'}
-                              slotProps={{ 
-                                textField: { 
-                                  size: 'small',
-                                  placeholder: '7:00 AM',
-                                  sx: { width: '100%' }
-                                }
-                              }}
-                              ampm={true}
-                            />
-                          </LocalizationProvider>
-                        </TableCell>
-                        <TableCell sx={{ bgcolor: 'rgba(0, 150, 136, 0.03)' }}>
-                          <LocalizationProvider dateAdapter={AdapterDateFns}>
-                            <TimePicker
-                              value={row.morningTimeOut}
-                              onChange={(newTime) => handleBulkInputChange(index, 'morningTimeOut', newTime)}
-                              disabled={row.status === 'Absent' || row.status === 'On Leave'}
-                              slotProps={{ 
-                                textField: { 
-                                  size: 'small',
-                                  placeholder: '12:00 PM',
-                                  sx: { width: '100%' }
-                                } 
-                              }}
-                              ampm={true}
-                            />
-                          </LocalizationProvider>
-                        </TableCell>
-                        <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.03)' }}>
-                          <LocalizationProvider dateAdapter={AdapterDateFns}>
-                            <TimePicker
-                              value={row.afternoonTimeIn}
-                              onChange={(newTime) => handleBulkInputChange(index, 'afternoonTimeIn', newTime)}
-                              disabled={row.status === 'Absent' || row.status === 'On Leave'}
-                              slotProps={{ 
-                                textField: { 
-                                  size: 'small',
-                                  placeholder: '1:00 PM',
-                                  sx: { width: '100%' }
-                                } 
-                              }}
-                              ampm={true}
-                            />
-                          </LocalizationProvider>
-                        </TableCell>
-                        <TableCell sx={{ bgcolor: 'rgba(63, 81, 181, 0.03)' }}>
-                          <LocalizationProvider dateAdapter={AdapterDateFns}>
-                            <TimePicker
-                              value={row.afternoonTimeOut}
-                              onChange={(newTime) => handleBulkInputChange(index, 'afternoonTimeOut', newTime)}
-                              disabled={row.status === 'Absent' || row.status === 'On Leave'}
-                              slotProps={{ 
-                                textField: { 
-                                  size: 'small',
-                                  placeholder: '6:00 PM',
-                                  sx: { width: '100%' }
-                                } 
-                              }}
-                              ampm={true}
-                            />
-                          </LocalizationProvider>
-                        </TableCell>
-                        <TableCell>
-                          <TextField
-                            type="number"
-                            value={row.overtime || 0}
-                            onChange={(e) => handleBulkInputChange(index, 'overtime', Number(e.target.value))}
-                            disabled={row.status === 'Absent' || row.status === 'On Leave'}
-                            size="small"
-                            sx={{ width: 60 }}
-                            InputProps={{
-                              inputProps: { min: 0, max: 12 }
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <TextField
-                            value={row.notes}
-                            onChange={(e) => handleBulkInputChange(index, 'notes', e.target.value)}
-                            size="small"
-                            placeholder="Optional notes"
-                            sx={{ minWidth: 120 }}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Grid>
-          </Grid>
-        ) : (
-          <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth>
-                <InputLabel id="employee-label">Employee</InputLabel>
-                <Select
-                  labelId="employee-label"
-                  name="employeeId"
-                  value={formData.employeeId}
-                  label="Employee"
-                  onChange={handleSelectChange}
-                  required
-                >
-                  {employees && employees.length > 0 ? 
-                    employees
-                      .filter((emp: any) => emp.status !== 'Inactive')
-                      .map((employee: any) => (
-                        <MenuItem key={employee.id} value={employee.id}>
-                          {`${employee.firstName} ${employee.lastName}`}
-                        </MenuItem>
-                      )) : 
-                    <MenuItem disabled>No employees available</MenuItem>
-                  }
-                </Select>
-              </FormControl>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <DatePicker
-                  label="Attendance Date"
-                  value={formData.date}
-                  onChange={handleDateChange}
-                  slotProps={{ textField: { fullWidth: true } }}
+              <Grid item xs={12} md={6}>
+                <TextField
+                  name="overtime"
+                  label="Overtime Hours"
+                  type="number"
+                  fullWidth
+                  value={formData.overtime === null ? '' : formData.overtime}
+                  onChange={handleInputChange}
+                  disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
+                  InputProps={{
+                    inputProps: { min: 0, max: 12 }
+                  }}
                 />
-              </LocalizationProvider>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <FormControl fullWidth>
-                <InputLabel id="status-label">Status</InputLabel>
-                <Select
-                  labelId="status-label"
-                  name="status"
-                  value={formData.status}
-                  label="Status"
-                  onChange={handleSelectChange}
-                >
-                  <MenuItem value="Present">Present</MenuItem>
-                  <MenuItem value="Absent">Absent</MenuItem>
-                  <MenuItem value="Late">Late</MenuItem>
-                  <MenuItem value="Half-day">Half-day</MenuItem>
-                  <MenuItem value="On Leave">On Leave</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            
-            <Grid item xs={12} md={6}>
-              <TextField
-                name="overtime"
-                label="Overtime Hours"
-                type="number"
-                fullWidth
-                value={formData.overtime === null ? '' : formData.overtime}
-                onChange={handleInputChange}
-                disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
-                InputProps={{
-                  inputProps: { min: 0, max: 12 }
-                }}
-              />
-            </Grid>
-            
-            {/* Morning Attendance Card */}
-            <Grid item xs={12} md={6}>
-              <Card variant="outlined" sx={{ mb: 2 }}>
-                <CardContent>
-                  <Typography variant="h6" color="primary" gutterBottom>
-                    Morning Attendance
-                  </Typography>
-                  
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <TimePicker
-                          label="Morning Time In"
-                          value={formData.morningTimeIn}
-                          onChange={handleTimeChange('morningTimeIn')}
-                          disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
-                          slotProps={{ 
-                            textField: { 
-                              fullWidth: true,
-                              size: "small",
-                            } 
-                          }}
-                          ampm={true}
-                        />
-                      </LocalizationProvider>
-                    </Grid>
-                    
-                    <Grid item xs={12}>
-                      <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <TimePicker
-                          label="Morning Time Out"
-                          value={formData.morningTimeOut}
-                          onChange={handleTimeChange('morningTimeOut')}
-                          disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
-                          slotProps={{ 
-                            textField: { 
-                              fullWidth: true,
-                              size: "small",
-                            } 
-                          }}
-                          ampm={true}
-                        />
-                      </LocalizationProvider>
-                    </Grid>
-                    
-                    {formData.morningTimeIn && formData.morningTimeOut && (
-                      <Grid item xs={12}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                          <Typography variant="body2" color="text.secondary">
-                            Morning Duration:
-                          </Typography>
-                          <Typography variant="body2" fontWeight="bold">
-                            {formData.morningTimeIn && formData.morningTimeOut ? 
-                              `${Math.round((formData.morningTimeOut.getTime() - formData.morningTimeIn.getTime()) / (1000 * 60 * 60) * 10) / 10} hours` : 
-                              '-'}
-                          </Typography>
-                        </Box>
-                      </Grid>
-                    )}
-                  </Grid>
-                </CardContent>
-              </Card>
-            </Grid>
-            
-            {/* Afternoon Attendance Card */}
-            <Grid item xs={12} md={6}>
-              <Card variant="outlined" sx={{ mb: 2 }}>
-                <CardContent>
-                  <Typography variant="h6" color="primary" gutterBottom>
-                    Afternoon Attendance
-                  </Typography>
-                  
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <TimePicker
-                          label="Afternoon Time In"
-                          value={formData.afternoonTimeIn}
-                          onChange={handleTimeChange('afternoonTimeIn')}
-                          disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
-                          slotProps={{ 
-                            textField: { 
-                              fullWidth: true,
-                              size: "small",
-                            } 
-                          }}
-                          ampm={true}
-                        />
-                      </LocalizationProvider>
-                    </Grid>
-                    
-                    <Grid item xs={12}>
-                      <LocalizationProvider dateAdapter={AdapterDateFns}>
-                        <TimePicker
-                          label="Afternoon Time Out"
-                          value={formData.afternoonTimeOut}
-                          onChange={handleTimeChange('afternoonTimeOut')}
-                          disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
-                          slotProps={{ 
-                            textField: { 
-                              fullWidth: true,
-                              size: "small",
-                            } 
-                          }}
-                          ampm={true}
-                        />
-                      </LocalizationProvider>
-                    </Grid>
-                    
-                    {formData.afternoonTimeIn && formData.afternoonTimeOut && (
-                      <Grid item xs={12}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                          <Typography variant="body2" color="text.secondary">
-                            Afternoon Duration:
-                          </Typography>
-                          <Typography variant="body2" fontWeight="bold">
-                            {formData.afternoonTimeIn && formData.afternoonTimeOut ? 
-                              `${Math.round((formData.afternoonTimeOut.getTime() - formData.afternoonTimeIn.getTime()) / (1000 * 60 * 60) * 10) / 10} hours` : 
-                              '-'}
-                          </Typography>
-                        </Box>
-                      </Grid>
-                    )}
-                  </Grid>
-                </CardContent>
-              </Card>
-            </Grid>
-            
-            {/* Total Hours Summary */}
-            <Grid item xs={12}>
-              <Card variant="outlined" sx={{ mb: 2, bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="subtitle1" fontWeight="bold">
-                      Total Working Hours:
+              </Grid>
+              
+              {/* Morning Attendance Card */}
+              <Grid item xs={12} md={6}>
+                <Card variant="outlined" sx={{ mb: 2 }}>
+                  <CardContent>
+                    <Typography variant="h6" color="primary" gutterBottom>
+                      Morning Attendance
                     </Typography>
-                    <Typography variant="subtitle1" fontWeight="bold" color="primary">
-                      {(() => {
-                        let totalHours = 0;
-                        
-                        // Add morning hours if both in and out are set
-                        if (formData.morningTimeIn && formData.morningTimeOut) {
-                          totalHours += (formData.morningTimeOut.getTime() - formData.morningTimeIn.getTime()) / (1000 * 60 * 60);
-                        }
-                        
-                        // Add afternoon hours if both in and out are set
-                        if (formData.afternoonTimeIn && formData.afternoonTimeOut) {
-                          totalHours += (formData.afternoonTimeOut.getTime() - formData.afternoonTimeIn.getTime()) / (1000 * 60 * 60);
-                        }
-                        
-                        return totalHours > 0 ? `${Math.round(totalHours * 10) / 10} hours` : '-';
-                      })()}
+                    
+                    <Grid container spacing={2}>
+                      <Grid item xs={12}>
+                        <LocalizationProvider dateAdapter={AdapterDateFns}>
+                          <TimePicker
+                            label="Morning Time In"
+                            value={formData.morningTimeIn}
+                            onChange={handleTimeChange('morningTimeIn')}
+                            disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
+                            slotProps={{ 
+                              textField: { 
+                                fullWidth: true,
+                                size: "small",
+                              } 
+                            }}
+                            ampm={true}
+                          />
+                        </LocalizationProvider>
+                      </Grid>
+                      
+                      <Grid item xs={12}>
+                        <LocalizationProvider dateAdapter={AdapterDateFns}>
+                          <TimePicker
+                            label="Morning Time Out"
+                            value={formData.morningTimeOut}
+                            onChange={handleTimeChange('morningTimeOut')}
+                            disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
+                            slotProps={{ 
+                              textField: { 
+                                fullWidth: true,
+                                size: "small",
+                              } 
+                            }}
+                            ampm={true}
+                          />
+                        </LocalizationProvider>
+                      </Grid>
+                      
+                      {formData.morningTimeIn && formData.morningTimeOut && (
+                        <Grid item xs={12}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              Morning Duration:
+                            </Typography>
+                            <Typography variant="body2" fontWeight="bold">
+                              {formData.morningTimeIn && formData.morningTimeOut ? 
+                                `${Math.round((formData.morningTimeOut.getTime() - formData.morningTimeIn.getTime()) / (1000 * 60 * 60) * 10) / 10} hours` : 
+                                '-'}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      )}
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              {/* Afternoon Attendance Card */}
+              <Grid item xs={12} md={6}>
+                <Card variant="outlined" sx={{ mb: 2 }}>
+                  <CardContent>
+                    <Typography variant="h6" color="primary" gutterBottom>
+                      Afternoon Attendance
                     </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
+                    
+                    <Grid container spacing={2}>
+                      <Grid item xs={12}>
+                        <LocalizationProvider dateAdapter={AdapterDateFns}>
+                          <TimePicker
+                            label="Afternoon Time In"
+                            value={formData.afternoonTimeIn}
+                            onChange={handleTimeChange('afternoonTimeIn')}
+                            disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
+                            slotProps={{ 
+                              textField: { 
+                                fullWidth: true,
+                                size: "small",
+                              } 
+                            }}
+                            ampm={true}
+                          />
+                        </LocalizationProvider>
+                      </Grid>
+                      
+                      <Grid item xs={12}>
+                        <LocalizationProvider dateAdapter={AdapterDateFns}>
+                          <TimePicker
+                            label="Afternoon Time Out"
+                            value={formData.afternoonTimeOut}
+                            onChange={handleTimeChange('afternoonTimeOut')}
+                            disabled={formData.status === 'Absent' || formData.status === 'On Leave'}
+                            slotProps={{ 
+                              textField: { 
+                                fullWidth: true,
+                                size: "small",
+                              } 
+                            }}
+                            ampm={true}
+                          />
+                        </LocalizationProvider>
+                      </Grid>
+                      
+                      {formData.afternoonTimeIn && formData.afternoonTimeOut && (
+                        <Grid item xs={12}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              Afternoon Duration:
+                            </Typography>
+                            <Typography variant="body2" fontWeight="bold">
+                              {formData.afternoonTimeIn && formData.afternoonTimeOut ? 
+                                `${Math.round((formData.afternoonTimeOut.getTime() - formData.afternoonTimeIn.getTime()) / (1000 * 60 * 60) * 10) / 10} hours` : 
+                                '-'}
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      )}
+                    </Grid>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              {/* Total Hours Summary */}
+              <Grid item xs={12}>
+                <Card variant="outlined" sx={{ mb: 2, bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Typography variant="subtitle1" fontWeight="bold">
+                        Total Working Hours:
+                      </Typography>
+                      <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                        {(() => {
+                          let totalHours = 0;
+                          
+                          // Add morning hours if both in and out are set
+                          if (formData.morningTimeIn && formData.morningTimeOut) {
+                            totalHours += (formData.morningTimeOut.getTime() - formData.morningTimeIn.getTime()) / (1000 * 60 * 60);
+                          }
+                          
+                          // Add afternoon hours if both in and out are set
+                          if (formData.afternoonTimeIn && formData.afternoonTimeOut) {
+                            totalHours += (formData.afternoonTimeOut.getTime() - formData.afternoonTimeIn.getTime()) / (1000 * 60 * 60);
+                          }
+                          
+                          return totalHours > 0 ? `${Math.round(totalHours * 10) / 10} hours` : '-';
+                        })()}
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+              
+              <Grid item xs={12}>
+                <TextField
+                  name="notes"
+                  label="Notes"
+                  multiline
+                  rows={3}
+                  fullWidth
+                  value={formData.notes}
+                  onChange={handleInputChange}
+                  placeholder="Add any notes about this attendance record"
+                />
+              </Grid>
             </Grid>
-            
-            <Grid item xs={12}>
-              <TextField
-                name="notes"
-                label="Notes"
-                multiline
-                rows={3}
-                fullWidth
-                value={formData.notes}
-                onChange={handleInputChange}
-                placeholder="Add any notes about this attendance record"
-              />
-            </Grid>
-          </Grid>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseDialog}>Cancel</Button>
-        <Button 
-          onClick={handleSubmit} 
-          variant="contained" 
-          color="primary"
-          disabled={loading}
-        >
-          {loading ? <CircularProgress size={24} /> : 'Save'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancel</Button>
+          <Button 
+            onClick={handleSubmit} 
+            variant="contained" 
+            color="primary"
+            disabled={loading}
+          >
+            {loading ? <CircularProgress size={24} /> : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-    <Snackbar
-      open={snackbar.open}
-      autoHideDuration={6000}
-      onClose={handleCloseSnackbar}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-    >
-      <Alert 
-        onClose={handleCloseSnackbar} 
-        severity={snackbar.severity}
-        sx={{ width: '100%' }}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        {snackbar.message}
-      </Alert>
-    </Snackbar>
-  </Box>
-);
+        <Alert 
+          onClose={handleCloseSnackbar} 
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
 };
 
 export default AttendanceLists;
