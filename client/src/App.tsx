@@ -21,7 +21,7 @@ import Payroll from './pages/Payroll';
 import MachineryList from './pages/Machinery';
 import ReportsList from './pages/Reports';
 import ProfilePage from './pages/Profile';
-import SettingsPage from './pages/SettingsPage';
+import SettingsPage from './pages/Settings';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/common/LoadingScreen';
 import AttendanceList from './pages/Attendance'
