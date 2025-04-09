@@ -2,8 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { supabase } from '../../supabaseClient';
 
 interface User {
-  id: number;
-  auth_id: string;
+  id: string; // Changed to string to match Supabase auth user id
   email: string | undefined;
   firstName?: string;
   lastName?: string;
@@ -38,74 +37,25 @@ const initialState: AuthState = {
   error: null
 };
 
-const getOrCreateUserProfile = async (authUser: any) => {
+// Simplified function to create a user object from Supabase auth data
+const createUserFromAuthData = (authUser: any): User | null => {
   if (!authUser) return null;
   
-  try {
-    const { data: existingProfile, error: fetchError } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('auth_user_id', authUser.id)
-      .single();
-
-    if (fetchError && fetchError.code !== 'PGRST116') { 
-      console.error('Error fetching user profile:', fetchError);
-      throw new Error(`Error fetching user profile: ${fetchError.message}`);
+  return {
+    id: authUser.id,
+    email: authUser.email,
+    firstName: authUser.user_metadata?.firstName || '',
+    lastName: authUser.user_metadata?.lastName || '',
+    role: authUser.user_metadata?.role || 'user',
+    phone: authUser.user_metadata?.phone || '',
+    jobTitle: authUser.user_metadata?.jobTitle || '',
+    settings: authUser.user_metadata?.settings || {
+      darkMode: false,
+      language: 'en',
+      emailNotifications: true,
+      appNotifications: true
     }
-
-    if (existingProfile) {
-      return {
-        id: existingProfile.id,
-        auth_id: authUser.id,
-        email: authUser.email,
-        firstName: authUser.user_metadata?.firstName || existingProfile.first_name,
-        lastName: authUser.user_metadata?.lastName || existingProfile.last_name,
-        role: existingProfile.role,
-        phone: existingProfile.phone,
-        jobTitle: existingProfile.job_title,
-        settings: existingProfile.settings
-      };
-    }
-
-    const { data: newProfile, error: insertError } = await supabase
-      .from('user_profiles')
-      .insert([
-        { 
-          auth_user_id: authUser.id, 
-          first_name: authUser.user_metadata?.firstName || '',
-          last_name: authUser.user_metadata?.lastName || '',
-          email: authUser.email
-        }
-      ])
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Error creating user profile:', insertError);
-      throw new Error(`Error creating user profile: ${insertError.message}`);
-    }
-
-    return {
-      id: newProfile.id,
-      auth_id: authUser.id,
-      email: authUser.email,
-      firstName: authUser.user_metadata?.firstName || newProfile.first_name,
-      lastName: authUser.user_metadata?.lastName || newProfile.last_name,
-      role: newProfile.role,
-      phone: newProfile.phone,
-      jobTitle: newProfile.job_title,
-      settings: newProfile.settings
-    };
-  } catch (error) {
-    console.error('Error in getOrCreateUserProfile:', error);
-    return {
-      id: 0,
-      auth_id: authUser.id,
-      email: authUser.email,
-      firstName: authUser.user_metadata?.firstName,
-      lastName: authUser.user_metadata?.lastName,
-    };
-  }
+  };
 };
 
 export const login = createAsyncThunk(
@@ -128,25 +78,12 @@ export const login = createAsyncThunk(
       
       localStorage.setItem('token', data.session.access_token);
       
-      try {
-        const userProfile = await getOrCreateUserProfile(data.user);
-        return { 
-          session: data.session, 
-          user: userProfile 
-        };
-      } catch (profileError: any) {
-        console.error('Profile error during login:', profileError);
-        return { 
-          session: data.session, 
-          user: {
-            id: 0,
-            auth_id: data.user.id,
-            email: data.user.email,
-            firstName: data.user.user_metadata?.firstName,
-            lastName: data.user.user_metadata?.lastName,
-          }
-        };
-      }
+      const user = createUserFromAuthData(data.user);
+      
+      return { 
+        session: data.session, 
+        user 
+      };
     } catch (error: any) {
       console.error('Unexpected login error:', error);
       return rejectWithValue(error.message || 'Login failed');
@@ -171,7 +108,8 @@ export const register = createAsyncThunk(
         options: {
           data: {
             firstName,
-            lastName
+            lastName,
+            role: 'user' // Default role for new users
           }
         }
       });
@@ -206,19 +144,8 @@ export const getCurrentUser = createAsyncThunk(
         return rejectWithValue(error?.message || 'User not authenticated');
       }
       
-      try {
-        const userProfile = await getOrCreateUserProfile(data.user);
-        return userProfile;
-      } catch (profileError: any) {
-        console.error('Profile error in getCurrentUser:', profileError);
-        return {
-          id: 0,
-          auth_id: data.user.id,
-          email: data.user.email,
-          firstName: data.user.user_metadata?.firstName,
-          lastName: data.user.user_metadata?.lastName,
-        };
-      }
+      const user = createUserFromAuthData(data.user);
+      return user;
     } catch (error: any) {
       localStorage.removeItem('token');
       return rejectWithValue(error.message || 'Failed to get user');
@@ -237,41 +164,30 @@ export const updateUserProfile = createAsyncThunk(
         return rejectWithValue('User not authenticated');
       }
       
+      // Update user metadata in Supabase Auth
       const { error: authUpdateError } = await supabase.auth.updateUser({
         data: {
-          firstName: profileData.firstName,
-          lastName: profileData.lastName
+          firstName: profileData.firstName ?? user.firstName,
+          lastName: profileData.lastName ?? user.lastName,
+          phone: profileData.phone ?? user.phone,
+          jobTitle: profileData.jobTitle ?? user.jobTitle
         }
       });
       
       if (authUpdateError) {
-        console.error('Error updating auth metadata:', authUpdateError);
+        console.error('Error updating user metadata:', authUpdateError);
+        return rejectWithValue(authUpdateError.message);
       }
       
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({
-          first_name: profileData.firstName,
-          last_name: profileData.lastName,
-          phone: profileData.phone,
-          job_title: profileData.jobTitle
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
+      // Get updated user data
+      const { data: userData, error: userError } = await supabase.auth.getUser();
       
-      if (error) {
-        console.error('Error updating user profile:', error);
-        return rejectWithValue(error.message);
+      if (userError || !userData.user) {
+        return rejectWithValue(userError?.message || 'Failed to get updated user data');
       }
       
-      return {
-        ...user,
-        firstName: profileData.firstName || user.firstName,
-        lastName: profileData.lastName || user.lastName,
-        phone: profileData.phone || user.phone,
-        jobTitle: profileData.jobTitle || user.jobTitle
-      };
+      const updatedUser = createUserFromAuthData(userData.user);
+      return updatedUser;
     } catch (error: any) {
       console.error('Unexpected profile update error:', error);
       return rejectWithValue(error.message || 'Profile update failed');
@@ -290,24 +206,35 @@ export const updateUserSettings = createAsyncThunk(
         return rejectWithValue('User not authenticated');
       }
       
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({
-          settings: settings
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
+      // Get current user data first
+      const { data: userData } = await supabase.auth.getUser();
+      const currentMetadata = userData.user?.user_metadata || {};
       
-      if (error) {
-        console.error('Error updating user settings:', error);
-        return rejectWithValue(error.message);
+      // Update user metadata with new settings
+      const { error: authUpdateError } = await supabase.auth.updateUser({
+        data: {
+          ...currentMetadata,
+          settings: {
+            ...currentMetadata.settings,
+            ...settings
+          }
+        }
+      });
+      
+      if (authUpdateError) {
+        console.error('Error updating user settings:', authUpdateError);
+        return rejectWithValue(authUpdateError.message);
       }
       
-      return {
-        ...user,
-        settings
-      };
+      // Get the updated user with new settings
+      const { data: updatedUserData, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !updatedUserData.user) {
+        return rejectWithValue(userError?.message || 'Failed to get updated user data');
+      }
+      
+      const updatedUser = createUserFromAuthData(updatedUserData.user);
+      return updatedUser;
     } catch (error: any) {
       console.error('Unexpected settings update error:', error);
       return rejectWithValue(error.message || 'Settings update failed');
@@ -332,8 +259,7 @@ const authSlice = createSlice({
     },
     setMockAuthState: (state) => {
       state.user = {
-        id: 1,
-        auth_id: 'test-user-id',
+        id: 'test-user-id',
         email: 'test@example.com',
         firstName: 'Test',
         lastName: 'User',
