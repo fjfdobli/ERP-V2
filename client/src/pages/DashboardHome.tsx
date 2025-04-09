@@ -66,11 +66,16 @@ interface Order {
 }
 
 interface InventoryItem {
-  id: string;
+  id: number;
   itemName: string;
   itemType: string;
   quantity: number;
   minStockLevel: number;
+  sku?: string;
+  unitPrice?: number | null;
+  supplierId?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 interface TabPanelProps {
@@ -145,60 +150,72 @@ const formatCurrency = (amount: number): string => {
   }).format(amount);
 };
 
-// Generate mock notifications for demo purposes
-const generateMockNotifications = (): Notification[] => {
-  return [
-    {
-      id: '1',
+// Generate real notifications based on actual data
+const generateRealNotifications = (
+  lowStockItems: any[],
+  pendingOrders: number,
+  pendingRequests: number,
+  machinesNeedingMaintenance: number
+): Notification[] => {
+  const notifications: Notification[] = [];
+  
+  // Add low stock notifications
+  if (lowStockItems.length > 0) {
+    notifications.push({
+      id: `inventory-${Date.now()}`,
       type: 'inventory',
       title: 'Low Stock Alert',
-      message: '5 inventory items are below minimum stock levels',
+      message: `${lowStockItems.length} inventory item(s) are below minimum stock levels`,
       severity: 'warning',
       timestamp: new Date().toISOString(),
       read: false,
       actionUrl: '/inventory'
-    },
-    {
-      id: '2',
+    });
+  }
+  
+  // Add pending orders notifications
+  if (pendingOrders > 0) {
+    notifications.push({
+      id: `orders-${Date.now()}`,
       type: 'order',
-      title: 'New Order',
-      message: 'Order #ORD-2023-089 has been placed by Client ABC',
+      title: 'Pending Orders',
+      message: `${pendingOrders} order(s) are pending processing`,
       severity: 'info',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
+      timestamp: new Date().toISOString(),
       read: false,
       actionUrl: '/orders'
-    },
-    {
-      id: '3',
+    });
+  }
+  
+  // Add pending order requests notifications
+  if (pendingRequests > 0) {
+    notifications.push({
+      id: `requests-${Date.now()}`,
+      type: 'order',
+      title: 'Order Requests',
+      message: `${pendingRequests} order request(s) need review`,
+      severity: 'info',
+      timestamp: new Date().toISOString(),
+      read: false,
+      actionUrl: '/order-requests'
+    });
+  }
+  
+  // Add machinery maintenance notifications
+  if (machinesNeedingMaintenance > 0) {
+    notifications.push({
+      id: `machinery-${Date.now()}`,
       type: 'machinery',
       title: 'Maintenance Due',
-      message: 'Printing Press Machine #3 requires scheduled maintenance',
+      message: `${machinesNeedingMaintenance} machine(s) require scheduled maintenance`,
       severity: 'warning',
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      read: true,
-      actionUrl: '/machinery'
-    },
-    {
-      id: '4',
-      type: 'payroll',
-      title: 'Payroll Generated',
-      message: 'March 2023 payroll has been processed successfully',
-      severity: 'success',
-      timestamp: new Date(Date.now() - 86400000).toISOString(),
-      read: true,
-      actionUrl: '/payroll'
-    },
-    {
-      id: '5',
-      type: 'supplier',
-      title: 'Payment Due',
-      message: 'Invoice #INV-456 from Paper Supplier Inc. is due in 3 days',
-      severity: 'error',
-      timestamp: new Date(Date.now() - 43200000).toISOString(),
+      timestamp: new Date().toISOString(),
       read: false,
-      actionUrl: '/suppliers'
-    }
-  ];
+      actionUrl: '/machinery'
+    });
+  }
+  
+  return notifications;
 };
 
 const DashboardHome: React.FC = () => {
@@ -207,34 +224,39 @@ const DashboardHome: React.FC = () => {
   const theme = useTheme();
   
   // Redux state
-  const { orders, error: ordersError } = useAppSelector(state => state.orders);
-  const ordersLoading = useAppSelector(state => state.orders.isLoading || false); // Adjust based on your state structure
-  const { clients, error: clientsError } = useAppSelector(state => state.clients);
-  const { inventoryItems, lowStockItems, isLoading: inventoryLoading, error: inventoryError } = useAppSelector(state => state.inventory);
+  const { clientOrders: orders, error: ordersError } = useAppSelector(state => state.orders);
+  const ordersLoading = useAppSelector(state => state.orders.loading || false);
+  const { items: clients, error: clientsError } = useAppSelector(state => state.clients);
+  const { inventoryItems, isLoading: inventoryLoading, error: inventoryError } = useAppSelector(state => state.inventory);
   const { employees, isLoading: employeesLoading } = useAppSelector(state => state.employees);
   const { attendanceRecords, isLoading: attendanceLoading } = useAppSelector(state => state.attendance || { attendanceRecords: [], isLoading: false });
   const { payrollRecords, isLoading: payrollLoading } = useAppSelector(state => state.payroll || { payrollRecords: [], isLoading: false });
   const { machinery, machineryStats, isLoading: machineryLoading } = useAppSelector(state => state.machinery || { machinery: [], machineryStats: null, isLoading: false });
   const suppliersState = useAppSelector(state => state.suppliers);
-  const suppliers = suppliersState?.suppliers || [];
-  const suppliersLoading = suppliersState?.isLoading || false;
-  const { orderRequests, isLoading: orderRequestsLoading } = useAppSelector(state => state.orderRequests || { orderRequests: [], isLoading: false });
+  const suppliers = suppliersState?.items || [];
+  const suppliersLoading = suppliersState?.status === 'loading' || false;
+  const { orderRequests, loading: orderRequestsLoading } = useAppSelector(state => state.orderRequest || { orderRequests: [], loading: false });
   
   // Local state
   const [tabValue, setTabValue] = useState(0);
   const [activeTimeFilter, setActiveTimeFilter] = useState<'week' | 'month' | 'quarter' | 'year'>('month');
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [notifications, setNotifications] = useState<Notification[]>(generateMockNotifications());
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notificationsMenuAnchor, setNotificationsMenuAnchor] = useState<null | HTMLElement>(null);
   const [filterMenuAnchor, setFilterMenuAnchor] = useState<null | HTMLElement>(null);
   
   // Calculate dashboard metrics - using useMemo for performance optimization
+  // Calculate low stock items
+  const lowStockItems = useMemo(() => {
+    return inventoryItems?.filter((item: any) => item.quantity <= (item.minStockLevel || 0)) || [];
+  }, [inventoryItems]);
+
   const dashboardMetrics = useMemo(() => {
     // Order metrics
-    const pendingOrders: number = (orders || []).filter((order: Order) => order.status === 'Pending').length;
-    const inProgressOrders: number = (orders || []).filter((order: Order) => order.status === 'In Progress').length;
-    const completedOrders: number = (orders || []).filter((order: Order) => order.status === 'Completed').length;
-    const cancelledOrders: number = (orders || []).filter((order: Order) => order.status === 'Cancelled').length;
+    const pendingOrders: number = (orders || []).filter((order: any) => order.status === 'Pending').length;
+    const inProgressOrders: number = (orders || []).filter((order: any) => order.status === 'In Progress').length;
+    const completedOrders: number = (orders || []).filter((order: any) => order.status === 'Completed').length;
+    const cancelledOrders: number = (orders || []).filter((order: any) => order.status === 'Cancelled').length;
     
     // Order request metrics
     const pendingRequests = (orderRequests || []).filter((req: any) => req.status === 'Pending').length;
@@ -242,23 +264,27 @@ const DashboardHome: React.FC = () => {
     const rejectedRequests = (orderRequests || []).filter((req: any) => req.status === 'Rejected').length;
     
     // Financial metrics
-    const totalRevenue: number = (orders || []).reduce((sum: number, order: Order) => sum + (order.totalAmount || 0), 0);
-    const outstandingRevenue: number = (orders || []).reduce((sum: number, order: Order) => sum + ((order.totalAmount || 0) - (order.amountPaid || 0)), 0);
-    const currentMonthRevenue = (orders || [])
-      .filter((order: Order) => {
-      if (!order.createdAt) return false;
-      const orderDate: Date = new Date(order.createdAt);
+    const totalRevenue: number = (orders || []).reduce((sum: number, order: any) => sum + (order.amount || 0), 0);
+    const outstandingRevenue: number = (orders || []).reduce((sum: number, order: any) => {
+      const total = order.amount || 0;
+      const paid = order.amountPaid || 0;
+      return sum + (total - paid);
+    }, 0);
+    const currentMonthRevenue: number = (orders || [])
+      .filter((order: any) => {
+      if (!order.created_at) return false;
+      const orderDate: Date = new Date(order.created_at);
       const currentMonth: number = new Date().getMonth();
       const currentYear: number = new Date().getFullYear();
       return orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear;
       })
-      .reduce((sum: number, order: Order) => sum + (order.totalAmount || 0), 0);
+      .reduce((sum: number, order: any) => sum + (order.amount || 0), 0);
       
     // Resource metrics
     const totalEmployees = employees?.length || 0;
     const totalPayroll = (payrollRecords || []).reduce((sum, record: any) => sum + (record.netSalary || 0), 0);
     const totalInventoryItems = inventoryItems?.length || 0;
-    const totalLowStockItems = lowStockItems?.length || 0;
+    const totalLowStockItems = lowStockItems.length || 0;
     const totalMachinery = machinery?.length || 0;
     const totalSuppliers = suppliers?.length || 0;
     const totalClients = clients?.length || 0;
@@ -303,15 +329,15 @@ const DashboardHome: React.FC = () => {
       machinesNeedingMaintenance,
       todayAttendanceCount
     };
-  }, [orders, orderRequests, employees, payrollRecords, inventoryItems, lowStockItems, machinery, suppliers, clients, attendanceRecords]);
+  }, [orders, orderRequests, employees, payrollRecords, inventoryItems, machinery, suppliers, clients, attendanceRecords]);
   
   const unreadNotificationsCount = notifications.filter(notification => !notification.read).length;
 
   // Get sorted lists for display - using useMemo for better performance
   const recentOrders = useMemo(() => {
     return [...(orders || [])].sort((a, b) => {
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
       return dateB - dateA;
     }).slice(0, 5);
   }, [orders]);
@@ -345,6 +371,29 @@ const DashboardHome: React.FC = () => {
   useEffect(() => {
     fetchDashboardData();
   }, [dispatch]);
+  
+  // Update notifications when data changes
+  useEffect(() => {
+    if (!inventoryLoading && !ordersLoading && !orderRequestsLoading && !machineryLoading) {
+      const pendingOrdersCount = (orders || []).filter((order: any) => order.status === 'Pending').length;
+      const pendingRequestsCount = (orderRequests || []).filter((req: any) => req.status === 'Pending').length;
+      const machinesNeedingMaintenanceCount = (machinery || []).filter((machine: any) => {
+        if (!machine.nextMaintenanceDate) return false;
+        const today = new Date();
+        const nextMaintenanceDate = new Date(machine.nextMaintenanceDate);
+        return nextMaintenanceDate <= today;
+      }).length;
+      
+      const newNotifications = generateRealNotifications(
+        lowStockItems,
+        pendingOrdersCount,
+        pendingRequestsCount,
+        machinesNeedingMaintenanceCount
+      );
+      
+      setNotifications(newNotifications);
+    }
+  }, [lowStockItems, orders, orderRequests, machinery, inventoryLoading, ordersLoading, orderRequestsLoading, machineryLoading]);
 
   // Function to fetch all dashboard data
   const fetchDashboardData = async () => {
@@ -852,7 +901,7 @@ const DashboardHome: React.FC = () => {
               )}
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Typography variant="body2" sx={{ mr: 1 }}>
-                  This Month: {formatCurrency(dashboardMetrics.currentMonthRevenue)}
+                  This Month: {formatCurrency(Number(dashboardMetrics.currentMonthRevenue))}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -1434,7 +1483,7 @@ const DashboardHome: React.FC = () => {
                             primary={
                               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                 <Typography variant="body1" fontWeight="medium">
-                                  {order.orderId}
+                                  {order.order_id}
                                 </Typography>
                                 <Chip
                                   size="small"
@@ -1447,13 +1496,13 @@ const DashboardHome: React.FC = () => {
                             secondary={
                               <Box sx={{ mt: 0.5 }}>
                                 <Typography variant="body2" color="text.secondary" component="span">
-                                  {order.client?.name || 'Unknown Client'} • 
+                                  {order.clients?.name || 'Unknown Client'} • 
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-                                  {formatCurrency(order.totalAmount || 0)}
+                                  {formatCurrency(order.amount || 0)}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-                                  • {formatDate(order.createdAt)}
+                                  • {formatDate(order.created_at)}
                                 </Typography>
                               </Box>
                             }
@@ -1612,7 +1661,7 @@ const DashboardHome: React.FC = () => {
                     </Box>
                   ) : (
                     <List sx={{ p: 0 }}>
-                      {lowStockItems.slice(0, 5).map((item: InventoryItem) => (
+                      {lowStockItems.slice(0, 5).map((item: any) => (
                       <ListItemButton 
                         key={item.id}
                         onClick={() => navigate(`/inventory/${item.id}`)}
@@ -1893,10 +1942,10 @@ const DashboardHome: React.FC = () => {
                         <TableBody>
                           {recentOrders.map((order) => (
                             <TableRow key={order.id}>
-                              <TableCell>{order.orderId}</TableCell>
-                              <TableCell>{order.client?.name || 'Unknown'}</TableCell>
-                              <TableCell>{formatDate(order.createdAt)}</TableCell>
-                              <TableCell>{formatCurrency(order.totalAmount)}</TableCell>
+                              <TableCell>{order.order_id}</TableCell>
+                              <TableCell>{order.clients?.name || 'Unknown'}</TableCell>
+                              <TableCell>{formatDate(order.created_at)}</TableCell>
+                              <TableCell>{formatCurrency(order.amount || 0)}</TableCell>
                               <TableCell>
                                 <Chip
                                   label={order.status}
@@ -2002,7 +2051,7 @@ const DashboardHome: React.FC = () => {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                            {lowStockItems.slice(0, 5).map((item: InventoryItem) => (
+                            {lowStockItems.slice(0, 5).map((item: any) => (
                             <TableRow key={item.id}>
                               <TableCell>{item.itemName}</TableCell>
                               <TableCell>{item.quantity}</TableCell>
