@@ -1,31 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
-  Button, TextField, InputAdornment, CircularProgress, Dialog, DialogTitle, DialogContent, 
-  DialogActions, Grid, Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, 
-  Chip, IconButton, Tooltip, Tabs, Tab, Divider, Card, CardContent, 
-  List, ListItem, ListItemText, ListItemIcon, Link, LinearProgress
-} from '@mui/material';
-import { 
-  Add as AddIcon, Search as SearchIcon, Refresh as RefreshIcon, 
-  History as HistoryIcon, ConstructionOutlined as ConstructionIcon, ReceiptLong as ReceiptLongIcon,
-  Build as BuildIcon, Edit as EditIcon, Delete as DeleteIcon, 
-  CheckCircle as CheckCircleIcon, Warning as WarningIcon, Error as ErrorIcon,
-  Info as InfoIcon, DoDisturb as DoDisturbIcon, EventNote as EventNoteIcon,
-  Engineering as EngineeringIcon, Handyman as HandymanIcon
-} from '@mui/icons-material';
+import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, Chip, IconButton, Tooltip, Tabs, Tab, Divider, Card, CardContent, List, ListItem, ListItemText, ListItemIcon, Link, LinearProgress } from '@mui/material';
+import { Add as AddIcon, Search as SearchIcon, Refresh as RefreshIcon, History as HistoryIcon, ConstructionOutlined as ConstructionIcon, ReceiptLong as ReceiptLongIcon, Build as BuildIcon, Edit as EditIcon, Delete as DeleteIcon, CheckCircle as CheckCircleIcon, Warning as WarningIcon, Error as ErrorIcon, Info as InfoIcon, DoDisturb as DoDisturbIcon, EventNote as EventNoteIcon, Engineering as EngineeringIcon, Handyman as HandymanIcon } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { 
-  fetchMachinery, createMachinery, updateMachinery, deleteMachinery,
-  fetchMaintenanceRecords, createMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord,
-  fetchMachineryStats, fetchMaintenanceCostSummary
-} from '../redux/slices/machinerySlice';
-import { 
-  Machinery as MachineryType, MachineryFilters, MaintenanceRecord 
-} from '../services/machineryService';
+import { fetchMachinery, createMachinery, updateMachinery, deleteMachinery,fetchMaintenanceRecords, createMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord, fetchMachineryStats, fetchMaintenanceCostSummary } from '../redux/slices/machinerySlice';
+import { Machinery as MachineryType, MachineryFilters, MaintenanceRecord } from '../services/machineryService';
 import { format, parseISO, addMonths, isBefore, isAfter, formatDistance } from 'date-fns';
 
 interface TabPanelProps {
@@ -233,7 +214,7 @@ const MachineryList: React.FC = () => {
         type: machinery.type,
         model: machinery.model,
         serialNumber: machinery.serialNumber,
-        manufacturer: machinery.manufacturer,
+        manufacturer: machinery.manufacturer || '',
         purchaseDate: machinery.purchaseDate ? parseISO(machinery.purchaseDate) : null,
         purchasePrice: machinery.purchasePrice,
         lastMaintenanceDate: machinery.lastMaintenanceDate ? parseISO(machinery.lastMaintenanceDate) : null,
@@ -646,7 +627,7 @@ const MachineryList: React.FC = () => {
     if (searchTerm && !machine.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
         !machine.model.toLowerCase().includes(searchTerm.toLowerCase()) &&
         !machine.serialNumber.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !machine.manufacturer.toLowerCase().includes(searchTerm.toLowerCase())) {
+        !(machine.manufacturer && machine.manufacturer.toLowerCase().includes(searchTerm.toLowerCase()))) {
       return false;
     }
     
@@ -801,34 +782,31 @@ const MachineryList: React.FC = () => {
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            <Box sx={{ display: 'flex' }}>
-                              <Tooltip title="Add Maintenance Record">
-                                <IconButton 
-                                  size="small" 
-                                  color="info"
-                                  onClick={() => handleOpenMaintenanceDialog(machine.id)}
-                                >
-                                  <BuildIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Edit Machinery">
-                                <IconButton 
-                                  size="small" 
-                                  color="primary"
-                                  onClick={() => handleOpenMachineryDialog(machine)}
-                                >
-                                  <EditIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Delete Machinery">
-                                <IconButton 
-                                  size="small" 
-                                  color="error"
-                                  onClick={() => handleDelete(machine.id)}
-                                >
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Button 
+                                size="small" 
+                                color="info"
+                                variant="outlined"
+                                onClick={() => handleOpenMaintenanceDialog(machine.id)}
+                              >
+                                Maintenance
+                              </Button>
+                              <Button 
+                                size="small" 
+                                color="primary"
+                                variant="outlined"
+                                onClick={() => handleOpenMachineryDialog(machine)}
+                              >
+                                Edit
+                              </Button>
+                              <Button 
+                                size="small" 
+                                color="error"
+                                variant="outlined"
+                                onClick={() => handleDelete(machine.id)}
+                              >
+                                Delete
+                              </Button>
                             </Box>
                           </TableCell>
                         </TableRow>
@@ -913,24 +891,24 @@ const MachineryList: React.FC = () => {
                           <TableCell>{record.performedBy}</TableCell>
                           <TableCell>{formatCurrency(record.cost)}</TableCell>
                           <TableCell>
-                            <Tooltip title="Edit Record">
-                              <IconButton 
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Button 
                                 size="small" 
                                 color="primary"
+                                variant="outlined"
                                 onClick={() => record.machineryId && handleOpenMaintenanceDialog(record.machineryId, record)}
                               >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Delete Record">
-                              <IconButton 
+                                Edit
+                              </Button>
+                              <Button 
                                 size="small" 
                                 color="error"
+                                variant="outlined"
                                 onClick={() => handleDeleteMaintenanceRecord(record.id)}
                               >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
+                                Delete
+                              </Button>
+                            </Box>
                           </TableCell>
                         </TableRow>
                       );
@@ -1712,24 +1690,25 @@ const MachineryList: React.FC = () => {
                                     Performed by: {record.performedBy}
                                   </Typography>
                                   
-                                  <Box>
-                                    <IconButton 
+                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button 
                                       size="small" 
                                       color="primary"
+                                      variant="outlined"
                                       onClick={() => handleOpenMaintenanceDialog(selectedMachinery.id, record)}
                                     >
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                    <IconButton 
+                                      Edit
+                                    </Button>
+                                    <Button 
                                       size="small" 
                                       color="error"
+                                      variant="outlined"
                                       onClick={() => handleDeleteMaintenanceRecord(record.id)}
                                     >
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
+                                      Delete
+                                    </Button>
                                   </Box>
                                 </Box>
-                                
                                 {record.notes && (
                                   <Typography variant="body2" color="text.secondary" sx={{ mt: 1, fontStyle: 'italic' }}>
                                     Note: {record.notes}
