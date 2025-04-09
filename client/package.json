@@ -63,6 +63,7 @@
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.3",
     "eslint-plugin-react": "^7.37.4",
-    "prettier": "^3.5.3"
+    "prettier": "^3.5.3",
+    "react-app-rewired": "^2.2.1"
   }
 }

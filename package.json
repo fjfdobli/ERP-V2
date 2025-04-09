@@ -2,9 +2,9 @@
   "name": "printingpresserp",
   "version": "1.0.0",
   "description": "Printing Press ERP System",
-  "main": "index.js",
+  "main": "start.js",
   "scripts": {
-    "start": "concurrently \"npm run server\" \"npm run client\"",
+    "start": "node start.js",
     "server": "cd server && npm run dev",
     "client": "cd client && npm start",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
@@ -18,7 +18,7 @@
     "express",
     "supabase"
   ],
-  "author": "",
+  "author": "Ferdinand John F. Dobli, Eriel John Q. Espinosa, Raphael Miguel D. Operario",
   "license": "ISC",
   "devDependencies": {
     "concurrently": "^9.1.2"
