@@ -11,20 +11,20 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import DashboardLayout from './components/layout/Dashboard';
 import DashboardHome from './pages/DashboardHome';
-import ClientsList from './pages/ClientsList';
-import OrderRequestsList from './pages/Orders/OrderRequestsList';
-import ClientOrdersList from './pages/Orders/ClientOrdersList';
-import InventoryList from './pages/InventoryList';
-import EmployeesList from './pages/EmployeesList';
-import SuppliersList from './pages/SuppliersList';
+import ClientsList from './pages/Clients';
+import OrderRequestsList from './pages/Orders/OrderRequest';
+import ClientOrdersList from './pages/Orders/ClientOrders';
+import InventoryList from './pages/Inventory';
+import EmployeesList from './pages/Employees';
+import SuppliersList from './pages/Suppliers';
 import Payroll from './pages/Payroll';
-import MachineryList from './pages/MachineryList';
-import ReportsList from './pages/ReportsList';
-import ProfilePage from './pages/ProfilePage';
+import MachineryList from './pages/Machinery';
+import ReportsList from './pages/Reports';
+import ProfilePage from './pages/Profile';
 import SettingsPage from './pages/SettingsPage';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/common/LoadingScreen';
-import AttendanceList from './pages/AttendanceLists'
+import AttendanceList from './pages/Attendance'
 interface ProtectedRouteProps {
   children: ReactNode;
 }
