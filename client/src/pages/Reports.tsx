@@ -212,28 +212,106 @@ const ReportsList: React.FC = () => {
     doc.setTextColor(120, 120, 120);
     doc.text(`Generated on: ${formatDate(new Date(), 'MMM dd, yyyy, HH:mm')}`, pageWidth - 15, 65, { align: 'right' });
     
-    // Add table with styling
-    (doc as any).autoTable({
-      startY: 70,
-      head: [columns.map(col => col.header)],
-      body: data.map(item => columns.map(col => item[col.dataKey] !== undefined ? item[col.dataKey] : '')),
-      theme: 'grid',
-      headStyles: {
-        fillColor: [41, 128, 185],
-        textColor: 255,
-        fontStyle: 'bold',
-        halign: 'center'
-      },
-      alternateRowStyles: {
-        fillColor: [245, 245, 245]
-      },
-      styles: {
-        fontSize: 9,
-        cellPadding: 3,
-        lineColor: [200, 200, 200]
-      },
-      margin: { top: 70, right: 14, bottom: 25, left: 14 }
-    });
+    // Add table manually if autoTable is not available
+    try {
+      // Try using autoTable if it's available
+      if (typeof (doc as any).autoTable === 'function') {
+        (doc as any).autoTable({
+          startY: 70,
+          head: [columns.map(col => col.header)],
+          body: data.map(item => columns.map(col => item[col.dataKey] !== undefined ? item[col.dataKey] : '')),
+          theme: 'grid',
+          headStyles: {
+            fillColor: [41, 128, 185],
+            textColor: 255,
+            fontStyle: 'bold',
+            halign: 'center'
+          },
+          alternateRowStyles: {
+            fillColor: [245, 245, 245]
+          },
+          styles: {
+            fontSize: 9,
+            cellPadding: 3,
+            lineColor: [200, 200, 200]
+          },
+          margin: { top: 70, right: 14, bottom: 25, left: 14 }
+        });
+      } else {
+        // Manual table implementation as fallback
+        console.warn("autoTable not available, drawing manual table");
+        const margin = 14;
+        const tableTop = 70;
+        const tableWidth = pageWidth - 2 * margin;
+        const colWidth = tableWidth / columns.length;
+        const rowHeight = 10;
+        
+        // Draw header
+        doc.setFillColor(41, 128, 185);
+        doc.rect(margin, tableTop, tableWidth, rowHeight, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        
+        columns.forEach((col, i) => {
+          doc.text(col.header, margin + i * colWidth + colWidth / 2, tableTop + rowHeight / 2 + 3, { align: 'center' });
+        });
+        
+        // Draw rows
+        let y = tableTop + rowHeight;
+        
+        data.forEach((row, rowIndex) => {
+          // Alternate row colors
+          if (rowIndex % 2 === 0) {
+            doc.setFillColor(245, 245, 245);
+            doc.rect(margin, y, tableWidth, rowHeight, 'F');
+          }
+          
+          doc.setTextColor(80, 80, 80);
+          doc.setFont('helvetica', 'normal');
+          
+          columns.forEach((col, colIndex) => {
+            const cellContent = row[col.dataKey] !== undefined ? row[col.dataKey] : '';
+            doc.text(String(cellContent), margin + colIndex * colWidth + colWidth / 2, y + rowHeight / 2 + 3, { align: 'center' });
+          });
+          
+          y += rowHeight;
+          
+          // Check if we need a new page
+          if (y > pageHeight - 30) {
+            doc.addPage();
+            y = 20;
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error generating table in PDF:", error);
+      
+      // Fallback to basic text content
+      const margin = 14; // Define margin for fallback text
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      doc.text("Error generating table. Basic data below:", margin, 70);
+      
+      let y = 80;
+      data.forEach((row, rowIndex) => {
+        let rowText = '';
+        columns.forEach((col) => {
+          const cellContent = row[col.dataKey] !== undefined ? row[col.dataKey] : '';
+          rowText += `${col.header}: ${cellContent} | `;
+        });
+        
+        doc.text(rowText, margin, y);
+        y += 7;
+        
+        // Check if we need a new page
+        if (y > pageHeight - 30) {
+          doc.addPage();
+          y = 20;
+        }
+      });
+    }
     
     // Add footer with border
     doc.setDrawColor(41, 128, 185); // Blue border
@@ -264,8 +342,18 @@ const ReportsList: React.FC = () => {
       );
     }
     
-    // Save the PDF
-    doc.save(`${title.toLowerCase().replace(/\s+/g, '_')}_report.pdf`);
+    try {
+      // Create a safe filename
+      const safeTitle = title.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      
+      // Save the PDF
+      doc.save(`${safeTitle}_report.pdf`);
+    } catch (error) {
+      console.error("Error saving PDF:", error);
+      // Fallback: open in new window
+      const blob = doc.output('blob');
+      window.open(URL.createObjectURL(blob));
+    }
     
     return doc;
   };
@@ -276,45 +364,54 @@ const ReportsList: React.FC = () => {
     sheetName: string,
     fileName: string
   ): void => {
-    const worksheetData = [
-      columns.map(col => col.header),
-      ...data.map(item => columns.map(col => item[col.dataKey] !== undefined ? item[col.dataKey] : ''))
-    ];
-    
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-    const workbook = XLSX.utils.book_new();
-    
-    // Add metadata
-    workbook.Props = {
-      Title: fileName,
-      Subject: `Report generated on ${formatDate(new Date(), 'yyyy-MM-dd')}`,
-      Author: "Printing Press ERP",
-      CreatedDate: new Date()
-    };
-    
-    // Add custom header styling for Excel
-    const headerRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-    for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
-      const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-      if (!worksheet[cellRef]) worksheet[cellRef] = { v: '' };
-      worksheet[cellRef].s = {
-        font: { bold: true, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '2980B9' } },
-        alignment: { horizontal: 'center', vertical: 'center' }
+    try {
+      const worksheetData = [
+        columns.map(col => col.header),
+        ...data.map(item => columns.map(col => item[col.dataKey] !== undefined ? item[col.dataKey] : ''))
+      ];
+      
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+      
+      // Add metadata
+      workbook.Props = {
+        Title: fileName,
+        Subject: `Report generated on ${formatDate(new Date(), 'yyyy-MM-dd')}`,
+        Author: "Printing Press ERP",
+        CreatedDate: new Date()
       };
+      
+      // Add custom header styling for Excel
+      const headerRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+      for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (!worksheet[cellRef]) worksheet[cellRef] = { v: '' };
+        worksheet[cellRef].s = {
+          font: { bold: true, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: '2980B9' } },
+          alignment: { horizontal: 'center', vertical: 'center' }
+        };
+      }
+      
+      // Auto-size columns (simple approach)
+      const colWidths = columns.map(col => ({
+        wch: Math.max(
+          col.header.length,
+          ...data.map(row => String(row[col.dataKey] || '').length)
+        )
+      }));
+      worksheet['!cols'] = colWidths;
+      
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      
+      // Create a safe filename
+      const safeFilename = fileName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      
+      XLSX.writeFile(workbook, `${safeFilename}_report.xlsx`);
+    } catch (error: any) {
+      console.error("Error generating Excel file:", error);
+      showSnackbar(`Failed to generate Excel file: ${error.message || 'Unknown error'}`, 'error');
     }
-    
-    // Auto-size columns (simple approach)
-    const colWidths = columns.map(col => ({
-      wch: Math.max(
-        col.header.length,
-        ...data.map(row => String(row[col.dataKey] || '').length)
-      )
-    }));
-    worksheet['!cols'] = colWidths;
-    
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-    XLSX.writeFile(workbook, `${fileName.toLowerCase().replace(/\s+/g, '_')}_report.xlsx`);
   };
 
   const generateCSV = (
@@ -322,25 +419,62 @@ const ReportsList: React.FC = () => {
     columns: { header: string, dataKey: string }[],
     fileName: string
   ): void => {
-    const worksheetData = [
-      columns.map(col => col.header),
-      ...data.map(item => columns.map(col => item[col.dataKey] !== undefined ? item[col.dataKey] : ''))
-    ];
-    
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-    const csv = XLSX.utils.sheet_to_csv(worksheet);
-    
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${fileName.toLowerCase().replace(/\s+/g, '_')}_report.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const worksheetData = [
+        columns.map(col => col.header),
+        ...data.map(item => columns.map(col => item[col.dataKey] !== undefined ? item[col.dataKey] : ''))
+      ];
+      
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+      const csv = XLSX.utils.sheet_to_csv(worksheet);
+      
+      // Create a safe filename
+      const safeFilename = fileName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
+      
+      // Method 1: Using download attribute
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${safeFilename}_report.csv`);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 100);
+    } catch (error: unknown) {
+      console.error("Error generating CSV file:", error);
+      showSnackbar(`Failed to generate CSV file: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      
+      // Try alternative method
+      try {
+        const alternativeData = [
+          columns.map(col => `"${col.header}"`).join(','),
+          ...data.map(item => 
+            columns.map(col => {
+              const value = item[col.dataKey];
+              return value !== undefined ? `"${value}"` : '""';
+            }).join(',')
+          )
+        ].join('\n');
+        
+        const element = document.createElement('a');
+        element.setAttribute('href', 'data:text/csv;charset=utf-8,' + encodeURIComponent(alternativeData));
+        element.setAttribute('download', `${fileName.toLowerCase().replace(/\s+/g, '_')}_report.csv`);
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+      } catch (e) {
+        console.error("Alternative CSV generation failed:", e);
+      }
+    }
   };
 
   const formatCurrency = (amount: number): string => {
@@ -549,6 +683,7 @@ const ReportsList: React.FC = () => {
       filteredAttendance = filteredAttendance.filter((record: any) => {
         return record.status === filters.status;
       });
+
     }
     
     // Get employee details
@@ -1168,193 +1303,202 @@ const ReportsList: React.FC = () => {
      availableFormats: ['pdf', 'excel', 'csv'],
      generateReport: generateMachineryReport,
      extraFilters: ['type']
-   },
-   {
-     id: 'payroll',
-     name: 'Payroll Report',
-     description: 'Employee payroll information including overtime, bonuses, and deductions',
-     icon: <ReceiptIcon color="primary" />,
-     availableFormats: ['pdf', 'excel', 'csv'],
-     generateReport: generatePayrollReport,
-     extraFilters: ['employeeId', 'status']
-   },
-   {
-     id: 'dtr',
-     name: 'Daily Time Record (DTR)',
-     description: 'Individual employee daily time records with attendance summary',
-     icon: <CalendarIcon color="primary" />,
-     availableFormats: ['pdf', 'excel', 'csv'],
-     generateReport: generateDTR,
-     extraFilters: ['employeeId']
-   },
-   {
-     id: 'printing_jobs',
-     name: 'Printing Jobs Report',
-     description: 'Detailed report of printing jobs with quantities, prices, and statuses',
-     icon: <OrdersIcon color="primary" />,
-     availableFormats: ['pdf', 'excel', 'csv'],
-     generateReport: generatePrintingJobReport,
-     extraFilters: ['clientId', 'status']
-   }
- ];
-
- const showSnackbar = useCallback((message: string, severity: 'success' | 'error' | 'info' | 'warning') => {
-   setSnackbar({ open: true, message, severity });
- }, []);
-
- const fetchData = useCallback(async () => {
-   setLoading(true);
-   try {
-     // Get current month data
-     const startDate = formatDate(startOfMonth(new Date()), 'yyyy-MM-dd');
-     const endDate = formatDate(endOfMonth(new Date()), 'yyyy-MM-dd');
-     
-     // Fetch all data for dashboard
-     await Promise.all([
-       dispatch(fetchEmployees()),
-       dispatch(fetchClients()),
-       dispatch(fetchSuppliers()),
-       dispatch(fetchMachinery({})),
-       dispatch(fetchMachineryStats()),
-       dispatch(fetchMaintenanceRecords()),
-       dispatch(fetchClientOrders()),
-       dispatch(fetchInventory()),
-       dispatch(fetchPayrolls({ startDate, endDate })),
-       dispatch(fetchAttendance({ startDate, endDate }))
-     ]);
-     
-     // Update dashboard data
-     updateDashboardData();
-     
-     setLoading(false);
-     showSnackbar('Data refreshed successfully', 'success');
-   } catch (error: any) {
-     console.error('Error fetching dashboard data:', error);
-     showSnackbar(error.message || 'Failed to load dashboard data', 'error');
-     setLoading(false);
-   }
- }, [dispatch, showSnackbar]);
-
- const updateDashboardData = () => {
-   // Calculate dashboard metrics from the fetched data
-   const employees = employeesState.employees || [];
-   const clients = clientsState.items || [];
-   const suppliers = suppliersState.items || [];
-   const machinery = machineryState.machinery || [];
-   const clientOrders = clientOrdersState.clientOrders || [];
-   const inventory = inventoryState.inventoryItems || [];
-   
-   // Calculate active orders
-   const activeOrders = clientOrders.filter((order: any) => 
-     order.status !== 'Completed' && order.status !== 'Cancelled' && 
-     order.status !== 'Delivered'
-   ).length;
-   
-   // Calculate revenue this month from completed orders
-   const revenueThisMonth = clientOrders.reduce((sum: number, order: any) => {
-     if ((order.status === 'Completed' || order.status === 'Delivered') && 
-         order.date && isWithinInterval(parseISO(order.date), {
-           start: startOfMonth(new Date()),
-           end: endOfMonth(new Date())
-         })) {
-       return sum + (order.amount || order.totalAmount || 0);
-     }
-     return sum;
-   }, 0);
-   
-   // Calculate expenses this month from payroll
-   const payrollExpenses = (payrollState.payrollRecords || []).reduce((sum: number, record: any) => 
-     sum + (record.netSalary || 0), 0);
-   
-   // Calculate pending payments
-   const pendingPayments = clientOrders.reduce((sum: number, order: any) => {
-     if (order.paymentStatus === 'Pending' || order.paymentStatus === 'Partial') {
-       return sum + (order.amount || order.totalAmount || 0) - (order.amountPaid || 0);
-     }
-     return sum;
-   }, 0);
-   
-   // Count low stock items
-   const lowStockItems = inventory.filter((item: any) => 
-     (item.quantity || item.currentStock || 0) <= (item.minStockLevel || item.reorderLevel || 0)
-   ).length;
-   
-   // Count machinery needing maintenance
-   const today = new Date();
-   const nextMonth = addMonths(today, 1);
-   
-   const upcomingMaintenance = machinery.filter((machine: any) => {
-     if (!machine.nextMaintenanceDate) return false;
-     const nextMaintenanceDate = parseISO(machine.nextMaintenanceDate);
-     return isWithinInterval(nextMaintenanceDate, { start: today, end: nextMonth });
-   }).length;
-   
-   // Update dashboard data
-   setDashboardData({
-     totalEmployees: employees.length,
-     totalClients: clients.length,
-     totalSuppliers: suppliers.length,
-     totalMachinery: machinery.length,
-     activeOrders,
-     revenueThisMonth,
-     expensesThisMonth: payrollExpenses,
-     pendingPayments,
-     lowStockItems,
-     upcomingMaintenance
-   });
- };
-
- useEffect(() => {
-   fetchData();
- }, [fetchData]);
-
- const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-   setTabValue(newValue);
- };
-
- const handleCloseSnackbar = () => {
-   setSnackbar({ ...snackbar, open: false });
- };
-
- const handleFilterChange = (field: keyof ReportFilter, value: any) => {
-   setReportFilters({
-     ...reportFilters,
-     [field]: value
-   });
- };
-
- const handleDateChange = (field: 'startDate' | 'endDate') => (date: Date | null) => {
-   if (date) {
-     setReportFilters({
-       ...reportFilters,
-       [field]: date
-     });
-   }
- };
-
- const handleGenerateReport = (reportType: string) => {
-   const selectedReport = reportTypes.find(report => report.id === reportType);
-   
-   if (!selectedReport) {
-     showSnackbar('Invalid report type selected', 'error');
-     return;
-   }
-   
-   setLoading(true);
-   
-   try {
-     // Gather all necessary data for the report
-     const reportData = {
-       clientOrders: clientOrdersState.clientOrders || [],
-       inventory: inventoryState.inventoryItems || [],
-       employees: employeesState.employees || [],
-       machinery: machineryState.machinery || [],
-       machineryStats: machineryState.machineryStats || {},
-       maintenanceRecords: machineryState.maintenanceRecords || [],
-       attendance: attendanceState.attendanceRecords || [],
-       payrollRecords: payrollState.payrollRecords || [],
-       clients: clientsState.items || [],
-       suppliers: suppliersState.items || []
+    },
+    {
+      id: 'payroll',
+      name: 'Payroll Report',
+      description: 'Employee payroll information including overtime, bonuses, and deductions',
+      icon: <ReceiptIcon color="primary" />,
+      availableFormats: ['pdf', 'excel', 'csv'],
+      generateReport: generatePayrollReport,
+      extraFilters: ['employeeId', 'status']
+    },
+    {
+      id: 'dtr',
+      name: 'Daily Time Record (DTR)',
+      description: 'Individual employee daily time records with attendance summary',
+      icon: <CalendarIcon color="primary" />,
+      availableFormats: ['pdf', 'excel', 'csv'],
+      generateReport: generateDTR,
+      extraFilters: ['employeeId']
+    },
+    {
+      id: 'printing_jobs',
+      name: 'Printing Jobs Report',
+      description: 'Detailed report of printing jobs with quantities, prices, and statuses',
+      icon: <OrdersIcon color="primary" />,
+      availableFormats: ['pdf', 'excel', 'csv'],
+      generateReport: generatePrintingJobReport,
+      extraFilters: ['clientId', 'status']
+    }
+  ];
+ 
+  const showSnackbar = useCallback((message: string, severity: 'success' | 'error' | 'info' | 'warning') => {
+    setSnackbar({ open: true, message, severity });
+  }, []);
+ 
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Get current month data
+      const startDate = formatDate(startOfMonth(new Date()), 'yyyy-MM-dd');
+      const endDate = formatDate(endOfMonth(new Date()), 'yyyy-MM-dd');
+      
+      // Fetch all data for dashboard
+      await Promise.all([
+        dispatch(fetchEmployees()),
+        dispatch(fetchClients()),
+        dispatch(fetchSuppliers()),
+        dispatch(fetchMachinery({})),
+        dispatch(fetchMachineryStats()),
+        dispatch(fetchMaintenanceRecords()),
+        dispatch(fetchClientOrders()),
+        dispatch(fetchInventory()),
+        dispatch(fetchPayrolls({ startDate, endDate })),
+        dispatch(fetchAttendance({ startDate, endDate }))
+      ]);
+      
+      // Update dashboard data
+      updateDashboardData();
+      
+      setLoading(false);
+      showSnackbar('Data refreshed successfully', 'success');
+    } catch (error: any) {
+      console.error('Error fetching dashboard data:', error);
+      showSnackbar(error.message || 'Failed to load dashboard data', 'error');
+      setLoading(false);
+    }
+  }, [dispatch, showSnackbar]);
+ 
+  const updateDashboardData = () => {
+    // Calculate dashboard metrics from the fetched data
+    const employees = employeesState.employees || [];
+    const clients = clientsState.items || [];
+    const suppliers = suppliersState.items || [];
+    const machinery = machineryState.machinery || [];
+    const clientOrders = clientOrdersState.clientOrders || [];
+    const inventory = inventoryState.inventoryItems || [];
+    
+    // Calculate active orders
+    const activeOrders = clientOrders.filter((order: any) => 
+      order.status !== 'Completed' && order.status !== 'Cancelled' && 
+      order.status !== 'Delivered'
+    ).length;
+    
+    // Calculate revenue this month from completed orders
+    const revenueThisMonth = clientOrders.reduce((sum: number, order: any) => {
+      if ((order.status === 'Completed' || order.status === 'Delivered') && 
+          order.date && isWithinInterval(parseISO(order.date), {
+            start: startOfMonth(new Date()),
+            end: endOfMonth(new Date())
+          })) {
+        return sum + (order.amount || order.totalAmount || 0);
+      }
+      return sum;
+    }, 0);
+    
+    // Calculate expenses this month from payroll
+    const payrollExpenses = (payrollState.payrollRecords || []).reduce((sum: number, record: any) => 
+      sum + (record.netSalary || 0), 0);
+    
+    // Calculate pending payments
+    const pendingPayments = clientOrders.reduce((sum: number, order: any) => {
+      if (order.paymentStatus === 'Pending' || order.paymentStatus === 'Partial') {
+        return sum + (order.amount || order.totalAmount || 0) - (order.amountPaid || 0);
+      }
+      return sum;
+    }, 0);
+    
+    // Count low stock items
+    const lowStockItems = inventory.filter((item: any) => 
+      (item.quantity || item.currentStock || 0) <= (item.minStockLevel || item.reorderLevel || 0)
+    ).length;
+    
+    // Count machinery needing maintenance
+    const today = new Date();
+    const nextMonth = addMonths(today, 1);
+    
+    const upcomingMaintenance = machinery.filter((machine: any) => {
+      if (!machine.nextMaintenanceDate) return false;
+      const nextMaintenanceDate = parseISO(machine.nextMaintenanceDate);
+      return isWithinInterval(nextMaintenanceDate, { start: today, end: nextMonth });
+    }).length;
+    
+    // Update dashboard data
+    setDashboardData({
+      totalEmployees: employees.length,
+      totalClients: clients.length,
+      totalSuppliers: suppliers.length,
+      totalMachinery: machinery.length,
+      activeOrders,
+      revenueThisMonth,
+      expensesThisMonth: payrollExpenses,
+      pendingPayments,
+      lowStockItems,
+      upcomingMaintenance
+    });
+  };
+ 
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+ 
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+ 
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+ 
+  const handleFilterChange = (field: keyof ReportFilter, value: any) => {
+    setReportFilters({
+      ...reportFilters,
+      [field]: value
+    });
+  };
+ 
+  const handleDateChange = (field: 'startDate' | 'endDate') => (date: Date | null) => {
+    if (date) {
+      setReportFilters({
+        ...reportFilters,
+        [field]: date
+      });
+    }
+  };
+ 
+  // Handle report generation with error catching
+  const handleGenerateReport = (reportType: string) => {
+    const selectedReport = reportTypes.find(report => report.id === reportType);
+    
+    if (!selectedReport) {
+      showSnackbar('Invalid report type selected', 'error');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      // Check if jsPDF-AutoTable is properly loaded for PDF reports
+      if (selectedReport.availableFormats.includes('pdf') && reportFilters.format === 'pdf') {
+        // Try to detect if autoTable is available
+        if (typeof (jsPDF.prototype as any).autoTable !== 'function') {
+          console.warn("jsPDF autoTable plugin is not properly initialized. Attempting to use fallback method.");
+        }
+      }
+      
+      // Gather all necessary data for the report
+      const reportData = {
+        clientOrders: clientOrdersState.clientOrders || [],
+        inventory: inventoryState.inventoryItems || [],
+        employees: employeesState.employees || [],
+        machinery: machineryState.machinery || [],
+        machineryStats: machineryState.machineryStats || {},
+        maintenanceRecords: machineryState.maintenanceRecords || [],
+        attendance: attendanceState.attendanceRecords || [],
+        payrollRecords: payrollState.payrollRecords || [],
+        clients: clientsState.items || [],
+        suppliers: suppliersState.items || []
       };
       
       // Get filters for this report type
@@ -1379,10 +1523,15 @@ const ReportsList: React.FC = () => {
     } catch (error: any) {
       console.error('Error generating report:', error);
       setLoading(false);
-      showSnackbar(`Failed to generate report: ${error.message || 'Unknown error'}`, 'error');
+      
+      if (error.message && error.message.includes('autoTable')) {
+        showSnackbar(`PDF generation failed: AutoTable plugin issue. Try Excel or CSV format instead.`, 'error');
+      } else {
+        showSnackbar(`Failed to generate report: ${error.message || 'Unknown error'}`, 'error');
+      }
     }
   };
-
+ 
   const handleGenerateSelectedReport = () => {
     if (reportFilters.type === 'all') {
       showSnackbar('Please select a report type', 'error');
@@ -1391,7 +1540,7 @@ const ReportsList: React.FC = () => {
     
     handleGenerateReport(reportFilters.type);
   };
-
+ 
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, alignItems: 'center' }}>
@@ -1407,7 +1556,7 @@ const ReportsList: React.FC = () => {
           {loading ? 'Refreshing...' : 'Refresh Data'}
         </Button>
       </Box>
-
+ 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Tabs value={tabValue} onChange={handleTabChange} aria-label="reports tabs">
           <Tab icon={<DashboardIcon />} label="Dashboard" />
@@ -1584,9 +1733,13 @@ const ReportsList: React.FC = () => {
                         <Grid item xs={12} md={3}>
                           <Button 
                             variant="outlined" 
-                            startIcon={<PdfIcon />}
+                            startIcon={<ExcelIcon />}
                             fullWidth
-                            onClick={() => handleGenerateReport('sales_summary')}
+                            onClick={() => {
+                              // Set format to Excel for quick reports to avoid PDF issues
+                              setReportFilters(prev => ({...prev, format: 'excel'}));
+                              handleGenerateReport('sales_summary');
+                            }}
                             sx={{ py: 1 }}
                           >
                             Monthly Sales Report
@@ -1596,9 +1749,12 @@ const ReportsList: React.FC = () => {
                         <Grid item xs={12} md={3}>
                           <Button 
                             variant="outlined" 
-                            startIcon={<PdfIcon />}
+                            startIcon={<ExcelIcon />}
                             fullWidth
-                            onClick={() => handleGenerateReport('inventory')}
+                            onClick={() => {
+                              setReportFilters(prev => ({...prev, format: 'excel'}));
+                              handleGenerateReport('inventory');
+                            }}
                             sx={{ py: 1 }}
                           >
                             Inventory Status Report
@@ -1608,9 +1764,12 @@ const ReportsList: React.FC = () => {
                         <Grid item xs={12} md={3}>
                           <Button 
                             variant="outlined" 
-                            startIcon={<PdfIcon />}
+                            startIcon={<ExcelIcon />}
                             fullWidth
-                            onClick={() => handleGenerateReport('printing_jobs')}
+                            onClick={() => {
+                              setReportFilters(prev => ({...prev, format: 'excel'}));
+                              handleGenerateReport('printing_jobs');
+                            }}
                             sx={{ py: 1 }}
                           >
                             Printing Jobs Report
@@ -1620,9 +1779,12 @@ const ReportsList: React.FC = () => {
                         <Grid item xs={12} md={3}>
                           <Button 
                             variant="outlined" 
-                            startIcon={<PdfIcon />}
+                            startIcon={<ExcelIcon />}
                             fullWidth
-                            onClick={() => handleGenerateReport('dtr')}
+                            onClick={() => {
+                              setReportFilters(prev => ({...prev, format: 'excel'}));
+                              handleGenerateReport('dtr');
+                            }}
                             sx={{ py: 1 }}
                           >
                             Generate DTR
@@ -1696,13 +1858,13 @@ const ReportsList: React.FC = () => {
                         label="Report Format"
                         onChange={(e) => handleFilterChange('format', e.target.value as 'pdf' | 'excel' | 'csv')}
                       >
-                        <MenuItem value="pdf">PDF</MenuItem>
                         <MenuItem value="excel">Excel</MenuItem>
                         <MenuItem value="csv">CSV</MenuItem>
+                        <MenuItem value="pdf">PDF</MenuItem>
                       </Select>
                     </FormControl>
                   </Grid>
-
+ 
                   {/* Dynamic additional filters based on selected report type */}
                   {reportFilters.type !== 'all' && 
                     reportTypes.find(report => report.id === reportFilters.type)?.extraFilters?.includes('employeeId') && (
@@ -1725,7 +1887,7 @@ const ReportsList: React.FC = () => {
                       </FormControl>
                     </Grid>
                   )}
-
+ 
                   {reportFilters.type !== 'all' && 
                     reportTypes.find(report => report.id === reportFilters.type)?.extraFilters?.includes('clientId') && (
                     <Grid item xs={12} md={3}>
@@ -1747,7 +1909,7 @@ const ReportsList: React.FC = () => {
                       </FormControl>
                     </Grid>
                   )}
-
+ 
                   {reportFilters.type !== 'all' && 
                     reportTypes.find(report => report.id === reportFilters.type)?.extraFilters?.includes('supplierId') && (
                     <Grid item xs={12} md={3}>
@@ -1769,7 +1931,7 @@ const ReportsList: React.FC = () => {
                       </FormControl>
                     </Grid>
                   )}
-
+ 
                   {reportFilters.type !== 'all' && 
                     reportTypes.find(report => report.id === reportFilters.type)?.extraFilters?.includes('status') && (
                     <Grid item xs={12} md={3}>
@@ -1852,14 +2014,6 @@ const ReportsList: React.FC = () => {
                         <TableCell>{report.description}</TableCell>
                         <TableCell>
                           <Box>
-                            {report.availableFormats.includes('pdf') && (
-                              <Chip 
-                                icon={<PdfIcon />} 
-                                label="PDF" 
-                                size="small" 
-                                sx={{ mr: 0.5 }} 
-                              />
-                            )}
                             {report.availableFormats.includes('excel') && (
                               <Chip 
                                 icon={<ExcelIcon />} 
@@ -1873,6 +2027,14 @@ const ReportsList: React.FC = () => {
                                 icon={<ExcelIcon />} 
                                 label="CSV" 
                                 size="small" 
+                                sx={{ mr: 0.5 }} 
+                              />
+                            )}
+                            {report.availableFormats.includes('pdf') && (
+                              <Chip 
+                                icon={<PdfIcon />} 
+                                label="PDF" 
+                                size="small" 
                               />
                             )}
                           </Box>
@@ -1881,8 +2043,12 @@ const ReportsList: React.FC = () => {
                           <Button
                             variant="contained"
                             size="small"
-                            startIcon={<DownloadIcon />}
-                            onClick={() => handleGenerateReport(report.id)}
+                            startIcon={<ExcelIcon />}
+                            onClick={() => {
+                              // Default to Excel for direct generation to avoid PDF issues
+                              setReportFilters(prev => ({...prev, format: 'excel'}));
+                              handleGenerateReport(report.id);
+                            }}
                             disabled={loading}
                             sx={{ mr: 1 }}
                           >
@@ -1899,7 +2065,7 @@ const ReportsList: React.FC = () => {
           </Grid>
         </TabPanel>
       </Paper>
-
+ 
       <Snackbar
         open={snackbar.open}
         autoHideDuration={6000}
@@ -1916,6 +2082,6 @@ const ReportsList: React.FC = () => {
       </Snackbar>
     </Box>
   );
-};
-
-export default ReportsList;
+ };
+ 
+ export default ReportsList;
