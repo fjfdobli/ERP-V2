@@ -703,11 +703,10 @@ const PayrollPage: React.FC = () => {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 2
-    }).format(amount);
+    // Format without any currency symbol, just the number with comma separators
+    const absAmount = Math.abs(amount);
+    const formattedNumber = absAmount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return formattedNumber;
   };
 
   const getEmployeeName = (employeeId: number) => {
@@ -727,380 +726,437 @@ const PayrollPage: React.FC = () => {
       return;
     }
 
-    // Create the document
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 20;
-    let yPos = margin;
+    try {
+      // Create the document
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      let yPos = margin;
 
-    // Company Logo and Header
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text("Opzon's Printers", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 8;
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text("Lanang, Davao city, Philippines", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 6;
-    
-    doc.text("Tel: (02) 8123-4567 | Email: payroll@printingpress.com", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 12;
+      // Company Logo and Header
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Opzon's Printers", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text("Lanang, Davao City, Philippines", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 6;
+      
+      doc.text("Tel: (02) 8123-4567 | Email: payroll@printingpress.com", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 12;
 
-    // Document Title
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(35, 87, 137);
-    doc.text("EMPLOYEE PAYSLIP", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 12;
+      // Document Title with background
+      doc.setFillColor(35, 87, 137);
+      doc.rect(margin, yPos - 2, pageWidth - 2 * margin, 10, 'F');
+      
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255); // White text on blue background
+      doc.text("EMPLOYEE PAYSLIP", pageWidth / 2, yPos + 5, { align: 'center' });
+      yPos += 15;
+      
+      // Reset text color
+      doc.setTextColor(0, 0, 0);
+      
+      // Add a border around the entire document
+      doc.setDrawColor(100, 100, 100);
+      doc.setLineWidth(0.5);
+      doc.rect(margin - 5, margin - 15, pageWidth - 2 * (margin - 5), pageHeight - 2 * (margin - 10));
     
-    // Reset text color
-    doc.setTextColor(0, 0, 0);
-    
-    // Border for the entire document
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.5);
-    doc.rect(margin, margin - 10, pageWidth - 2 * margin, yPos + 140);
-    
-    // Employee Information Section
-    doc.setFillColor(240, 240, 240);
-    doc.rect(margin, yPos, pageWidth - 2 * margin, 40, 'F');
-    
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text("EMPLOYEE DETAILS", margin + 5, yPos + 8);
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Employee Name:`, margin + 5, yPos + 16);
-    doc.text(`${employee.firstName} ${employee.lastName}`, margin + 60, yPos + 16);
-    
-    doc.text(`Employee ID:`, margin + 5, yPos + 24);
-    doc.text(`${employee.employeeId || '---'}`, margin + 60, yPos + 24);
-    
-    doc.text(`Position:`, margin + 5, yPos + 32);
-    doc.text(`${employee.position || '---'}`, margin + 60, yPos + 32);
-    
-    doc.text(`Pay Period:`, pageWidth - margin - 80, yPos + 16);
-    doc.text(`${format(parseISO(payroll.startDate), 'MM/dd/yyyy')} - ${format(parseISO(payroll.endDate), 'MM/dd/yyyy')}`, pageWidth - margin - 30, yPos + 16);
-    
-    doc.text(`Payroll Date:`, pageWidth - margin - 80, yPos + 24);
-    doc.text(`${payroll.paymentDate ? format(parseISO(payroll.paymentDate), 'MM/dd/yyyy') : '---'}`, pageWidth - margin - 30, yPos + 24);
-    
-    doc.text(`Status:`, pageWidth - margin - 80, yPos + 32);
-    doc.text(`${payroll.status}`, pageWidth - margin - 30, yPos + 32);
-    
-    yPos += 50;
-    
-    // Earnings Section
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text("EARNINGS", margin + 5, yPos);
-    // Earnings Section
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text("EARNINGS", margin + 5, yPos);
-    yPos += 5;
-    
-    // Earnings Table
-    const earningsData = [
-      ["Description", "Amount"],
-      ["Basic Salary", formatCurrency(payroll.baseSalary)],
-      ["Overtime Pay", formatCurrency(payroll.overtimePay)],
-      ["Bonus", formatCurrency(payroll.bonus)],
-      ["Gross Pay", formatCurrency(payroll.baseSalary + payroll.overtimePay + payroll.bonus)]
-    ];
-    
-    autoTable(doc, {
-      startY: yPos,
-      head: [earningsData[0]],
-      body: earningsData.slice(1),
-      theme: 'grid',
-      headStyles: {
-        fillColor: [220, 230, 240],
-        textColor: [0, 0, 0],
-        fontStyle: 'bold'
-      },
-      margin: { left: margin + 5, right: margin + 5 },
-      styles: {
-        overflow: 'linebreak',
-        cellWidth: 'auto',
-        cellPadding: 3
-      },
-      columnStyles: {
-        0: { cellWidth: 150 },
-        1: { halign: 'right' }
-      }
-    });
-    
-    yPos = (doc as any).lastAutoTable.finalY + 10;
-    
-    // Deductions Section
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text("DEDUCTIONS", margin + 5, yPos);
-    yPos += 5;
-    
-    // Deductions Table
-    const deductionsData = [
-      ["Description", "Amount"],
-      ["Standard Deductions", formatCurrency(payroll.deductions)],
-      ["Tax Withholding", formatCurrency(payroll.taxWithholding)],
-      ["Total Deductions", formatCurrency(payroll.deductions + payroll.taxWithholding)]
-    ];
-    
-    autoTable(doc, {
-      startY: yPos,
-      head: [deductionsData[0]],
-      body: deductionsData.slice(1),
-      theme: 'grid',
-      headStyles: {
-        fillColor: [220, 230, 240],
-        textColor: [0, 0, 0],
-        fontStyle: 'bold'
-      },
-      margin: { left: margin + 5, right: margin + 5 },
-      styles: {
-        overflow: 'linebreak',
-        cellWidth: 'auto',
-        cellPadding: 3
-      },
-      columnStyles: {
-        0: { cellWidth: 150 },
-        1: { halign: 'right' }
-      }
-    });
-    
-    yPos = (doc as any).lastAutoTable.finalY + 10;
-    
-    // Net Pay Section
-    doc.setFillColor(220, 230, 240);
-    doc.rect(margin + 5, yPos, pageWidth - 2 * margin - 10, 20, 'F');
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text("NET PAY:", margin + 15, yPos + 12);
-    
-    doc.setFontSize(14);
-    doc.setTextColor(0, 100, 0);
-    doc.text(formatCurrency(payroll.netSalary), pageWidth - margin - 30, yPos + 12, { align: 'right' });
-    
-    // Reset color
-    doc.setTextColor(0, 0, 0);
-    
-    yPos += 30;
-    
-    // Additional Information
-    if (payroll.bankTransferRef) {
-      doc.setFontSize(10);
+      // Employee Information Section
+      doc.setFillColor(240, 240, 240);
+      doc.rect(margin, yPos, pageWidth - 2 * margin, 40, 'F');
+      
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text("EMPLOYEE DETAILS", margin + 5, yPos + 8);
+      
+      // Left column labels with consistent alignment
+      const leftLabelX = margin + 5;
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Employee Name:`, leftLabelX, yPos + 16);
+      doc.text(`Employee ID:`, leftLabelX, yPos + 24);
+      doc.text(`Position:`, leftLabelX, yPos + 32);
+      
+      // Left column values with consistent alignment
+      const leftValueX = margin + 80;
       doc.setFont('helvetica', 'normal');
-      doc.text(`Bank Transfer Reference: ${payroll.bankTransferRef}`, margin + 5, yPos);
-      yPos += 6;
-    }
-    
-    if (payroll.notes) {
-      doc.setFontSize(10);
+      doc.text(`${employee.firstName} ${employee.lastName}`, leftValueX, yPos + 16);
+      doc.text(`${employee.employeeId || '---'}`, leftValueX, yPos + 24);
+      doc.text(`${employee.position || '---'}`, leftValueX, yPos + 32);
+      
+      // Right column labels with consistent alignment
+      const rightLabelX = pageWidth - margin - 100;
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Pay Period:`, rightLabelX, yPos + 16);
+      doc.text(`Payroll Date:`, rightLabelX, yPos + 24);
+      doc.text(`Status:`, rightLabelX, yPos + 32);
+      
+      // Right column values with consistent alignment
+      const rightValueX = pageWidth - margin - 25;
       doc.setFont('helvetica', 'normal');
-      doc.text(`Notes: ${payroll.notes}`, margin + 5, yPos);
-      yPos += 6;
+      doc.text(`${format(parseISO(payroll.startDate), 'MM/dd/yyyy')} - ${format(parseISO(payroll.endDate), 'MM/dd/yyyy')}`, rightValueX, yPos + 16);
+      doc.text(`${payroll.paymentDate ? format(parseISO(payroll.paymentDate), 'MM/dd/yyyy') : '---'}`, rightValueX, yPos + 24);
+      doc.text(`${payroll.status}`, rightValueX, yPos + 32);
+      
+      yPos += 50;
+      
+      // Earnings Section Header with better styling
+      doc.setFillColor(220, 230, 240);
+      doc.rect(margin, yPos - 5, pageWidth - 2 * margin, 10, 'F');
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text("EARNINGS", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 10;
+      
+      // Earnings Table
+      const earningsData = [
+        ["Description", "Amount"],
+        ["Basic Salary", formatCurrency(payroll.baseSalary)],
+        ["Overtime Pay", formatCurrency(payroll.overtimePay)],
+        ["Bonus", formatCurrency(payroll.bonus)],
+        ["Gross Pay", formatCurrency(payroll.baseSalary + payroll.overtimePay + payroll.bonus)]
+      ];
+      
+      // TypeScript cast for autoTable
+      const autoTableFunc = autoTable as (doc: jsPDF, options: any) => void;
+      
+      autoTableFunc(doc, {
+        startY: yPos,
+        head: [earningsData[0]],
+        body: earningsData.slice(1),
+        theme: 'grid',
+        headStyles: {
+          fillColor: [220, 230, 240],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold'
+        },
+        margin: { left: margin + 5, right: margin + 5 },
+        styles: {
+          overflow: 'linebreak',
+          cellWidth: 'auto',
+          cellPadding: 3
+        },
+        columnStyles: {
+          0: { cellWidth: 150 },
+          1: { halign: 'right' }
+        }
+      });
+      
+      // Get the last position of the table using a safer approach
+      const lastAutoTable = (doc as any).lastAutoTable;
+      yPos = lastAutoTable?.finalY + 10 || yPos + 50;
+      
+      // Deductions Section Header
+      doc.setFillColor(220, 230, 240);
+      doc.rect(margin, yPos - 5, pageWidth - 2 * margin, 10, 'F');
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text("DEDUCTIONS", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 10;
+      
+      // Deductions Table
+      const deductionsData = [
+        ["Description", "Amount"],
+        ["Standard Deductions", formatCurrency(payroll.deductions)],
+        ["Tax Withholding", formatCurrency(payroll.taxWithholding)],
+        ["Total Deductions", formatCurrency(payroll.deductions + payroll.taxWithholding)]
+      ];
+      
+      autoTableFunc(doc, {
+        startY: yPos,
+        head: [deductionsData[0]],
+        body: deductionsData.slice(1),
+        theme: 'grid',
+        headStyles: {
+          fillColor: [220, 230, 240],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold'
+        },
+        margin: { left: margin + 5, right: margin + 5 },
+        styles: {
+          overflow: 'linebreak',
+          cellWidth: 'auto',
+          cellPadding: 3
+        },
+        columnStyles: {
+          0: { cellWidth: 150 },
+          1: { halign: 'right' }
+        }
+      });
+      
+      // Get the last position of the table using a safer approach
+      const lastDeductionTable = (doc as any).lastAutoTable;
+      yPos = lastDeductionTable?.finalY + 10 || yPos + 50;
+      
+      // Net Pay Section with nice styling
+      doc.setFillColor(0, 100, 0); // Green background
+      doc.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(255, 255, 255); // White text on green background
+      
+      doc.text("NET PAY:", margin + 15, yPos + 14);
+      doc.setFontSize(14);
+      doc.text(formatCurrency(payroll.netSalary), pageWidth - margin - 15, yPos + 14, { align: 'right' });
+      
+      // Reset color
+      doc.setTextColor(0, 0, 0);
+      yPos += 30;
+      
+      // Additional Information section if needed
+      if (payroll.bankTransferRef || payroll.notes) {
+        doc.setFillColor(245, 245, 245);
+        doc.rect(margin, yPos, pageWidth - 2 * margin, 25, 'F');
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text("ADDITIONAL INFORMATION", margin + 5, yPos + 6);
+        
+        doc.setFont('helvetica', 'normal');
+        let infoYPos = yPos + 15;
+        
+        if (payroll.bankTransferRef) {
+          doc.text(`Bank Transfer Reference: ${payroll.bankTransferRef}`, margin + 10, infoYPos);
+          infoYPos += 6;
+        }
+        
+        if (payroll.notes) {
+          doc.text(`Notes: ${payroll.notes}`, margin + 10, infoYPos);
+        }
+        
+        yPos += 30;
+      }
+      
+      // Footer with signatures
+      doc.setLineWidth(0.5);
+      doc.line(margin + 20, yPos, margin + 80, yPos);
+      doc.line(pageWidth - margin - 80, yPos, pageWidth - margin - 20, yPos);
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text("Prepared by", margin + 20, yPos + 5, { align: 'left' });
+      doc.text("Received by", pageWidth - margin - 80, yPos + 5, { align: 'left' });
+      
+      // Disclaimer at bottom
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.text("This is a computer-generated document and does not require a signature.", pageWidth / 2, pageHeight - 20, { align: 'center' });
+    
+      // Save the PDF with the employee name and period
+      const fileName = `Payslip_${employee.lastName}_${employee.firstName}_${payroll.period}.pdf`;
+      doc.save(fileName);
+      
+      showSnackbar("Payslip generated successfully", "success");
+    } catch (error) {
+      console.error("Error generating payslip PDF:", error);
+      showSnackbar("Error generating payslip. Please try again.", "error");
     }
-    
-    yPos += 10;
-    
-    // Footer with signatures
-    doc.line(margin + 20, yPos, margin + 80, yPos);
-    doc.line(pageWidth - margin - 80, yPos, pageWidth - margin - 20, yPos);
-    
-    doc.setFontSize(9);
-    doc.text("Prepared by", margin + 20, yPos + 5, { align: 'left' });
-    doc.text("Received by", pageWidth - margin - 80, yPos + 5, { align: 'left' });
-    
-    // Disclaimer at bottom
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'italic');
-    doc.text("This is a computer-generated document and does not require a signature.", pageWidth / 2, pageHeight - 20, { align: 'center' });
-    
-    // Save the PDF with the employee name and period
-    const fileName = `Payslip_${employee.lastName}_${employee.firstName}_${payroll.period}.pdf`;
-    doc.save(fileName);
   };
 
   // Generate period summary PDF report
   const generatePeriodReport = (period: string, summary: any) => {
-    // Create the document
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 20;
-    let yPos = margin;
+    try {
+      // Create the document - use landscape for better layout
+      const doc = new jsPDF({ orientation: 'landscape' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      let yPos = margin;
 
-    // Company Logo and Header
-    doc.setFontSize(18);
-    doc.setFont('helvetica', 'bold');
-    doc.text("Opzon's Printers", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 8;
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'normal');
-    doc.text("Lanang, Davao City, Philippines", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 6;
-    
-    doc.text("Tel: (02) 8123-4567 | Email: payroll@printingpress.com", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 15;
+      // Company Logo and Header
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Opzon's Printers", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text("Lanang, Davao City, Philippines", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 6;
+      
+      doc.text("Tel: (02) 8123-4567 | Email: payroll@printingpress.com", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 15;
 
-    // Document Title
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(35, 87, 137);
-    doc.text("PAYROLL SUMMARY REPORT", pageWidth / 2, yPos, { align: 'center' });
-    yPos += 8;
-    
-    // Period subtitle
-    doc.setFontSize(12);
-    doc.text(`Period: ${format(
-      new Date(
-        Number(period.split('-')[0]),
-        Number(period.split('-')[1]) - 1
-      ),
-      'MMMM yyyy'
-    )}`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 15;
-    
-    // Reset text color
-    doc.setTextColor(0, 0, 0);
-    
-    // Summary Box
-    doc.setDrawColor(200, 200, 200);
-    doc.setFillColor(245, 245, 245);
-    doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 50, 3, 3, 'FD');
-    
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text("PERIOD SUMMARY", margin + 10, yPos + 10);
-    
-    // Summary data
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Start Date: ${format(parseISO(summary.startDate), 'MM/dd/yyyy')}`, margin + 10, yPos + 20);
-    doc.text(`End Date: ${format(parseISO(summary.endDate), 'MM/dd/yyyy')}`, margin + 10, yPos + 30);
-    doc.text(`Total Employees: ${summary.count}`, margin + 10, yPos + 40);
-    
-    // Financial summary on the right side
-    doc.setFont('helvetica', 'bold');
-    doc.text("Total Payroll:", pageWidth - margin - 100, yPos + 20);
-    doc.text("Paid Amount:", pageWidth - margin - 100, yPos + 30);
-    doc.text("Pending Amount:", pageWidth - margin - 100, yPos + 40);
-    
-    doc.setFont('helvetica', 'normal');
-    doc.text(formatCurrency(summary.total), pageWidth - margin - 10, yPos + 20, { align: 'right' });
-    doc.text(formatCurrency(summary.paid), pageWidth - margin - 10, yPos + 30, { align: 'right' });
-    doc.text(formatCurrency(summary.pending), pageWidth - margin - 10, yPos + 40, { align: 'right' });
-    
-    yPos += 60;
-    
-    // Filter payroll records for this period
-    const periodPayrolls = payrollRecords?.filter((record: PayrollType) => record.period === period) || [];
-    
-    // Employee Details Table
-    const tableHeaders = ["Employee", "Base Salary", "Overtime", "Bonus", "Deductions", "Tax", "Net Salary", "Status"];
-    const tableData = periodPayrolls.map((record: PayrollType) => [
-      getEmployeeName(record.employeeId),
-      formatCurrency(record.baseSalary),
-      formatCurrency(record.overtimePay),
-      formatCurrency(record.bonus),
-      formatCurrency(record.deductions),
-      formatCurrency(record.taxWithholding),
-      formatCurrency(record.netSalary),
-      record.status
-    ]);
-    
-    autoTable(doc, {
-      startY: yPos,
-      head: [tableHeaders],
-      body: tableData,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [220, 230, 240],
-        textColor: [0, 0, 0],
-        fontStyle: 'bold'
-      },
-      styles: {
-        overflow: 'linebreak',
-        cellWidth: 'auto',
-        cellPadding: 2,
-        fontSize: 8
-      },
-      columnStyles: {
-        0: { cellWidth: 40 },
-        1: { halign: 'right' },
-        2: { halign: 'right' },
-        3: { halign: 'right' },
-        4: { halign: 'right' },
-        5: { halign: 'right' },
-        6: { halign: 'right' },
-        7: { cellWidth: 20 }
-      }
-    });
-    
-    yPos = (doc as any).lastAutoTable.finalY + 15;
-    
-    // Status Summary
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.text("STATUS SUMMARY", margin, yPos);
-    yPos += 8;
-    
-    // Count payroll records by status
-    const statusCounts: Record<string, number> = {
-      'Draft': 0,
-      'Pending': 0,
-      'Approved': 0,
-      'Paid': 0
-    };
-    
-    periodPayrolls.forEach((record: PayrollType) => {
-      statusCounts[record.status]++;
-    });
-    
-    const statusData = [
-      ["Status", "Count"],
-      ["Draft", statusCounts.Draft.toString()],
-      ["Pending", statusCounts.Pending.toString()],
-      ["Approved", statusCounts.Approved.toString()],
-      ["Paid", statusCounts.Paid.toString()],
-      ["Total", periodPayrolls.length.toString()]
-    ];
-    
-    autoTable(doc, {
-      startY: yPos,
-      head: [statusData[0]],
-      body: statusData.slice(1),
-      theme: 'grid',
-      headStyles: {
-        fillColor: [220, 230, 240],
-        textColor: [0, 0, 0],
-        fontStyle: 'bold'
-      },
-      styles: {
-        overflow: 'linebreak',
-        cellWidth: 'auto',
-        cellPadding: 3
-      },
-      columnStyles: {
-        0: { cellWidth: 100 },
-        1: { halign: 'center' }
-      },
-      margin: { left: margin, right: margin + 100 }
-    });
-    
-    // Footer
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'italic');
-    doc.text("Generated on: " + format(new Date(), 'MM/dd/yyyy HH:mm:ss'), margin, pageHeight - 20);
-    doc.text("Page 1 of 1", pageWidth - margin, pageHeight - 20, { align: 'right' });
-    
-    // Save the PDF
-    const fileName = `Payroll_Summary_${period}.pdf`;
-    doc.save(fileName);
+      // Document Title
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(35, 87, 137);
+      doc.text("PAYROLL SUMMARY REPORT", pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+      
+      // Period subtitle
+      doc.setFontSize(12);
+      doc.text(`Period: ${format(
+        new Date(
+          Number(period.split('-')[0]),
+          Number(period.split('-')[1]) - 1
+        ),
+        'MMMM yyyy'
+      )}`, pageWidth / 2, yPos, { align: 'center' });
+      yPos += 15;
+      
+      // Reset text color
+      doc.setTextColor(0, 0, 0);
+      
+      // Summary Box
+      doc.setDrawColor(200, 200, 200);
+      doc.setFillColor(245, 245, 245);
+      doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 50, 3, 3, 'FD');
+      
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text("PERIOD SUMMARY", margin + 10, yPos + 10);
+      
+      // Summary data
+      // Left column labels with improved alignment
+      doc.setFont('helvetica', 'bold');
+      const labelX = margin + 10;
+      doc.text("Date Range:", labelX, yPos + 20);
+      doc.text("Total Employees:", labelX, yPos + 30);
+      
+      // Left column values with proper alignment
+      doc.setFont('helvetica', 'normal');
+      const valueX = margin + 80; // Consistent alignment for all values
+      doc.text(`${format(parseISO(summary.startDate), 'MMM dd, yyyy')} - ${format(parseISO(summary.endDate), 'MMM dd, yyyy')}`, 
+        valueX, yPos + 20);
+      doc.text(`${summary.count}`, valueX, yPos + 30);
+      
+      // Financial summary on the right side with improved alignment
+      doc.setFont('helvetica', 'bold');
+      const rightLabelX = pageWidth - margin - 120;
+      doc.text("Total Payroll:", rightLabelX, yPos + 20);
+      doc.text("Paid Amount:", rightLabelX, yPos + 30);
+      doc.text("Pending Amount:", rightLabelX, yPos + 40);
+      
+      // Right column values with consistent alignment
+      doc.setFont('helvetica', 'normal');
+      const rightValueX = pageWidth - margin - 10;
+      doc.text(formatCurrency(summary.total), rightValueX, yPos + 20, { align: 'right' });
+      doc.text(formatCurrency(summary.paid), rightValueX, yPos + 30, { align: 'right' });
+      doc.text(formatCurrency(summary.pending), rightValueX, yPos + 40, { align: 'right' });
+      
+      yPos += 60;
+      
+      // Filter payroll records for this period
+      const periodPayrolls = payrollRecords?.filter((record: PayrollType) => record.period === period) || [];
+      
+      // Employee Details Table
+      const tableHeaders = ["Employee", "Base Salary", "Overtime", "Bonus", "Deductions", "Tax", "Net Salary", "Status"];
+      const tableData = periodPayrolls.map((record: PayrollType) => [
+        getEmployeeName(record.employeeId),
+        formatCurrency(record.baseSalary),
+        formatCurrency(record.overtimePay),
+        formatCurrency(record.bonus),
+        formatCurrency(record.deductions),
+        formatCurrency(record.taxWithholding),
+        formatCurrency(record.netSalary),
+        record.status
+      ]);
+      
+      // TypeScript cast for autoTable
+      const autoTableFunc = autoTable as (doc: jsPDF, options: any) => void;
+      
+      autoTableFunc(doc, {
+        startY: yPos,
+        head: [tableHeaders],
+        body: tableData,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [220, 230, 240],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold'
+        },
+        styles: {
+          overflow: 'linebreak',
+          cellWidth: 'auto',
+          cellPadding: 2,
+          fontSize: 8
+        },
+        columnStyles: {
+          0: { cellWidth: 40 },
+          1: { halign: 'right' },
+          2: { halign: 'right' },
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+          6: { halign: 'right' },
+          7: { cellWidth: 20 }
+        }
+      });
+      
+      // Get the last position of the table using a safer approach
+      const lastDetailsTable = (doc as any).lastAutoTable;
+      yPos = lastDetailsTable?.finalY + 15 || yPos + 80;
+      
+      // Status Summary
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text("STATUS SUMMARY", margin, yPos);
+      yPos += 8;
+      
+      // Count payroll records by status
+      const statusCounts: Record<string, number> = {
+        'Draft': 0,
+        'Pending': 0,
+        'Approved': 0,
+        'Paid': 0
+      };
+      
+      periodPayrolls.forEach((record: PayrollType) => {
+        statusCounts[record.status]++;
+      });
+      
+      const statusData = [
+        ["Status", "Count"],
+        ["Draft", statusCounts.Draft.toString()],
+        ["Pending", statusCounts.Pending.toString()],
+        ["Approved", statusCounts.Approved.toString()],
+        ["Paid", statusCounts.Paid.toString()],
+        ["Total", periodPayrolls.length.toString()]
+      ];
+      
+      autoTableFunc(doc, {
+        startY: yPos,
+        head: [statusData[0]],
+        body: statusData.slice(1),
+        theme: 'grid',
+        headStyles: {
+          fillColor: [220, 230, 240],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold'
+        },
+        styles: {
+          overflow: 'linebreak',
+          cellWidth: 'auto',
+          cellPadding: 3
+        },
+        columnStyles: {
+          0: { cellWidth: 100 },
+          1: { halign: 'center' }
+        },
+        margin: { left: margin, right: margin + 100 }
+      });
+      
+      // Footer
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      doc.text("Generated on: " + format(new Date(), 'MM/dd/yyyy HH:mm:ss'), margin, pageHeight - 20);
+      doc.text("Page 1 of 1", pageWidth - margin, pageHeight - 20, { align: 'right' });
+      
+      // Save the PDF
+      const fileName = `Payroll_Summary_${period}.pdf`;
+      doc.save(fileName);
+      
+      showSnackbar("Period report generated successfully", "success");
+    } catch (error) {
+      console.error("Error generating period report PDF:", error);
+      showSnackbar("Error generating period report. Please try again.", "error");
+    }
   };
 
   // Filter displayed records based on search term

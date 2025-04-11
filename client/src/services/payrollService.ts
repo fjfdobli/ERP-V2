@@ -65,7 +65,8 @@ export const payrollService = {
     // Apply filters if provided
     if (filters) {
       if (filters.period) {
-        query = query.eq('period', filters.period);
+        // Support both exact period matches and prefix matches for bi-monthly periods
+        query = query.or(`period.eq.${filters.period},period.like.${filters.period}-%`);
       }
       if (filters.startDate) {
         query = query.gte('startDate', filters.startDate);
