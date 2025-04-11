@@ -298,27 +298,8 @@ const ProfilePage: React.FC = () => {
 
   return (
     <Box>
-      <Paper 
-        elevation={0} 
-        sx={{ 
-          p: 3, 
-          mb: 3, 
-          borderRadius: 2,
-          bgcolor: 'primary.main',
-          color: 'white',
-          backgroundImage: 'linear-gradient(45deg, #1976d2, #115293)',
-          boxShadow: (theme) => `0 4px 20px 0 ${theme.palette.primary.dark}40`
-        }}
-      >
-        <Typography variant="h5" gutterBottom fontWeight="bold">
-          My Profile
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.9 }}>
-          Manage your personal information and account preferences
-        </Typography>
-      </Paper>
 
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3, mt: 2 }}>
         {/* User Profile Card */}
         <Card 
           sx={{ 
@@ -371,6 +352,8 @@ const ProfilePage: React.FC = () => {
                 accept="image/*"
                 style={{ display: 'none' }}
                 onChange={handleAvatarUpload}
+                aria-label="Upload profile picture"
+                title="Choose a profile picture"
               />
               
               <Tooltip title="Change profile picture" arrow>

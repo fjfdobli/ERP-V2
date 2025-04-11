@@ -252,27 +252,8 @@ const SettingsPage: React.FC = () => {
 
   return (
     <Box>
-      <Paper 
-        elevation={0} 
-        sx={{ 
-          p: 3, 
-          mb: 3, 
-          borderRadius: 2,
-          bgcolor: 'primary.main',
-          color: 'white',
-          backgroundImage: 'linear-gradient(45deg, #1976d2, #115293)',
-          boxShadow: (theme) => `0 4px 20px 0 ${theme.palette.primary.dark}40`
-        }}
-      >
-        <Typography variant="h5" gutterBottom fontWeight="bold">
-          System Settings
-        </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.9 }}>
-          Customize your Opzon's Printing Press ERP experience
-        </Typography>
-      </Paper>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={3} sx={{ mt: 2 }}>
         {/* Overview Card */}
         <Grid item xs={12} md={4}>
           <Card sx={{ 
@@ -515,99 +496,6 @@ const SettingsPage: React.FC = () => {
                     />
                   </ListItem>
                   
-                  {/* Live theme preview */}
-                  <Box 
-                    sx={{ 
-                      mb: 3, 
-                      mx: 2, 
-                      p: 2, 
-                      borderRadius: 2, 
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      bgcolor: settings.darkMode ? '#121212' : '#fff'
-                    }}
-                  >
-                    <Typography 
-                      variant="subtitle2" 
-                      sx={{ 
-                        mb: 1.5, 
-                        color: settings.darkMode ? '#fff' : 'inherit',
-                        fontWeight: 500
-                      }}
-                    >
-                      Live Preview
-                    </Typography>
-                    
-                    <Box 
-                      sx={{ 
-                        display: 'flex', 
-                        gap: 1,
-                        p: settings.compactView ? 1 : 2,
-                        transition: 'padding 0.3s ease',
-                        borderRadius: 1,
-                        bgcolor: settings.darkMode ? '#1e1e1e' : '#f9f9f9'
-                      }}
-                    >
-                      <Box 
-                        sx={{ 
-                          width: 40, 
-                          height: 40, 
-                          borderRadius: '50%', 
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          bgcolor: 
-                            settings.theme === 'green' ? '#2e7d32' :
-                            settings.theme === 'purple' ? '#7b1fa2' :
-                            settings.theme === 'teal' ? '#00796b' :
-                            settings.theme === 'orange' ? '#ef6c00' : '#1976d2',
-                          color: 'white'
-                        }}
-                      >
-                        <PrintIcon fontSize="small" />
-                      </Box>
-                      
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Typography 
-                          variant="body2" 
-                          sx={{ 
-                            fontWeight: 'medium',
-                            color: settings.darkMode ? '#fff' : 'text.primary',
-                            fontSize: settings.compactView ? '0.8rem' : '0.875rem'
-                          }}
-                        >
-                          Sample Card
-                        </Typography>
-                        <Typography 
-                          variant="caption" 
-                          sx={{ 
-                            color: settings.darkMode ? 'rgba(255,255,255,0.7)' : 'text.secondary',
-                            fontSize: settings.compactView ? '0.7rem' : '0.75rem'
-                          }}
-                        >
-                          Showing your selected theme and spacing
-                        </Typography>
-                      </Box>
-                      
-                      <Button 
-                        size="small" 
-                        variant="contained"
-                        sx={{ 
-                          textTransform: 'none',
-                          px: settings.compactView ? 1 : 2,
-                          py: settings.compactView ? 0.5 : 1,
-                          fontSize: settings.compactView ? '0.75rem' : '0.875rem',
-                          bgcolor: 
-                            settings.theme === 'green' ? '#2e7d32' :
-                            settings.theme === 'purple' ? '#7b1fa2' :
-                            settings.theme === 'teal' ? '#00796b' :
-                            settings.theme === 'orange' ? '#ef6c00' : '#1976d2',
-                        }}
-                      >
-                        Action
-                      </Button>
-                    </Box>
-                  </Box>
 
                   {/* Color Theme Selector */}
                   <Typography variant="subtitle2" sx={{ px: 2, mt: 3, mb: 2, fontWeight: 500 }}>
