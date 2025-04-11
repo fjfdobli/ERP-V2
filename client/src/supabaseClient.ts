@@ -6,15 +6,76 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
-    autoRefreshToken: true
+    autoRefreshToken: true,
+    flowType: 'pkce', // More secure auth flow
+    detectSessionInUrl: true, // Auto-detect auth redirects
+    storage: localStorage,
+    storageKey: 'opzons-auth-storage',
+    debug: false // Set to true if you want to debug auth issues
   },
+  // Removed custom headers that were causing CORS issues
   global: {
-    headers: {
-      'x-application-name': 'opzons-printing-press'
-    }
+    headers: { }
   },
   db: {
     schema: 'public'
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
+  }
+});
+
+// Initialize and ensure the verification_codes table exists
+export const initializeAuthTables = async () => {
+  try {
+    // Check if verification_codes table exists
+    const { error: queryError } = await supabase
+      .from('verification_codes')
+      .select('id')
+      .limit(1);
+    
+    // If there was an error, the table might not exist
+    if (queryError && queryError.message.includes('does not exist')) {
+      console.log('Creating verification_codes table...');
+      
+      // Create the verification_codes table
+      const createTableQuery = `
+        CREATE TABLE IF NOT EXISTS public.verification_codes (
+          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+          email VARCHAR,
+          phone VARCHAR,
+          code VARCHAR NOT NULL,
+          type VARCHAR NOT NULL,
+          used BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT NOW(),
+          expires_at TIMESTAMP NOT NULL
+        );
+      `;
+      
+      // Try to execute the create table SQL (this requires PostgreSQL permissions)
+      const { error: createError } = await supabase.rpc('pg_query', { query: createTableQuery });
+      
+      if (createError) {
+        console.error('Error creating verification_codes table:', createError);
+        console.log('Please run the SQL script from server/supabase/migrations/verification_tables.sql in your Supabase dashboard SQL editor.');
+      } else {
+        console.log('Verification_codes table created successfully');
+      }
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error initializing auth tables:', error);
+    return { success: false, error };
+  }
+};
+
+// Run the initialization (but don't wait for it to finish)
+initializeAuthTables().then(result => {
+  if (result.success) {
+    console.log('Auth tables initialized successfully');
   }
 });
 

@@ -1,7 +1,14 @@
 import React, { useState, useEffect, CSSProperties } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { login, clearError, sendEmailVerificationCode, verifyEmailCode } from '../redux/slices/authSlice';
+import { 
+  login, 
+  clearError, 
+  sendEmailVerificationCode, 
+  sendPhoneVerificationCode,
+  verifyEmailCode,
+  verifyPhoneCode
+} from '../redux/slices/authSlice';
 import { 
   Box, 
   Container, 
@@ -147,36 +154,86 @@ const Login = () => {
   const handleInitialSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    if (loginMethod === 1 && !validatePhoneNumber(phoneNumber)) {
+    // Validate inputs based on login method
+    if (loginMethod === 0 && (!email || !email.includes('@'))) {
+      setSnackbar({
+        open: true,
+        message: 'Please enter a valid email address',
+        severity: 'error'
+      });
+      return;
+    } else if (loginMethod === 1 && !validatePhoneNumber(phoneNumber)) {
+      return;
+    }
+    
+    if (!password || password.length < 6) {
+      setSnackbar({
+        open: true,
+        message: 'Password must be at least 6 characters',
+        severity: 'error'
+      });
       return;
     }
     
     try {
-      // For email login, we can directly attempt login
+      // Attempt login based on the selected method
       if (loginMethod === 0) {
+        // Email login
         const resultAction = await dispatch(login({ email, password }));
         
         if (login.rejected.match(resultAction)) {
-          // Check if the error is due to email verification
+          // Check if the error message suggests email verification is needed
           const errorMsg = resultAction.payload as string;
-          if (errorMsg.toLowerCase().includes('email') && errorMsg.toLowerCase().includes('verify')) {
+          
+          if (errorMsg.toLowerCase().includes('email') && 
+              (errorMsg.toLowerCase().includes('verify') || 
+               errorMsg.toLowerCase().includes('confirm'))) {
+            // Show verification UI and send a verification code
             setShowVerification(true);
             await handleSendVerificationCode();
           }
         }
       } else {
-        // For phone login
+        // Phone login - now properly implemented
         const formattedPhone = formatPhoneNumber(phoneNumber);
-        // In a real implementation, you'd have a phoneLogin function in authSlice
-        // For now, we'll just show a message that this isn't implemented
-        setSnackbar({
-          open: true,
-          message: 'Phone login requires Twilio integration. Please use email login.',
-          severity: 'info'
-        });
+        
+        try {
+          const resultAction = await dispatch(login({ phone: formattedPhone, password }));
+          
+          if (login.rejected.match(resultAction)) {
+            const errorMsg = resultAction.payload as string;
+            
+            if (errorMsg.toLowerCase().includes('phone') && 
+                (errorMsg.toLowerCase().includes('verify') || 
+                 errorMsg.toLowerCase().includes('confirm'))) {
+              // Show phone verification UI
+              setShowVerification(true);
+              await handleSendVerificationCode();
+            } else {
+              // Show the error message
+              setSnackbar({
+                open: true,
+                message: errorMsg,
+                severity: 'error'
+              });
+            }
+          }
+        } catch (phoneError) {
+          console.error('Phone login error:', phoneError);
+          setSnackbar({
+            open: true,
+            message: 'An error occurred during phone login. Please try again.',
+            severity: 'error'
+          });
+        }
       }
     } catch (error) {
       console.error('Login error:', error);
+      setSnackbar({
+        open: true,
+        message: 'An unexpected error occurred. Please try again.',
+        severity: 'error'
+      });
     }
   };
 
@@ -187,21 +244,45 @@ const Login = () => {
     
     try {
       if (loginMethod === 0) {
+        // Email verification
+        if (!email || !email.includes('@')) {
+          setVerificationError('Please enter a valid email address');
+          return;
+        }
+        
         const resultAction = await dispatch(sendEmailVerificationCode(email));
-        if (sendEmailVerificationCode.rejected.match(resultAction)) {
+        
+        if (sendEmailVerificationCode.fulfilled.match(resultAction)) {
+          setSnackbar({
+            open: true,
+            message: 'Verification code sent to your email',
+            severity: 'success'
+          });
+        } else if (sendEmailVerificationCode.rejected.match(resultAction)) {
           setVerificationError(resultAction.payload as string);
         }
       } else {
-        // Phone verification would be implemented here
+        // Phone verification
+        if (!validatePhoneNumber(phoneNumber)) {
+          setVerificationError('Please enter a valid phone number');
+          return;
+        }
+        
         const formattedPhone = formatPhoneNumber(phoneNumber);
-        setSnackbar({
-          open: true,
-          message: 'SMS verification requires Twilio integration.',
-          severity: 'info'
-        });
+        const resultAction = await dispatch(sendPhoneVerificationCode(formattedPhone));
+        
+        if (sendPhoneVerificationCode.fulfilled.match(resultAction)) {
+          setSnackbar({
+            open: true,
+            message: 'Verification code sent to your phone',
+            severity: 'success'
+          });
+        } else if (sendPhoneVerificationCode.rejected.match(resultAction)) {
+          setVerificationError(resultAction.payload as string);
+        }
       }
-    } catch (error) {
-      setVerificationError('Failed to send verification code. Please try again.');
+    } catch (error: any) {
+      setVerificationError('Failed to send verification code: ' + (error.message || 'Please try again.'));
     } finally {
       setVerificationLoading(false);
     }
@@ -209,31 +290,65 @@ const Login = () => {
 
   // Verify code and login
   const handleVerifyAndLogin = async () => {
+    if (!verificationCode || verificationCode.length !== 6) {
+      setVerificationError('Please enter a valid 6-digit verification code');
+      return;
+    }
+    
     setVerificationLoading(true);
+    setVerificationError('');
     
     try {
       if (loginMethod === 0) {
+        // Email verification
         const verifyAction = await dispatch(verifyEmailCode({ 
           email, 
           code: verificationCode 
         }));
         
         if (verifyEmailCode.fulfilled.match(verifyAction)) {
-          // Now try to login again
-          await dispatch(login({ email, password }));
+          // Now try to login again with email verification flag
+          const loginAction = await dispatch(login({ email, password }));
+          
+          if (login.fulfilled.match(loginAction)) {
+            setSnackbar({
+              open: true,
+              message: 'Email verified. Logging in...',
+              severity: 'success'
+            });
+          } else if (login.rejected.match(loginAction)) {
+            setVerificationError(loginAction.payload as string);
+          }
         } else if (verifyEmailCode.rejected.match(verifyAction)) {
           setVerificationError(verifyAction.payload as string);
         }
       } else {
-        // Phone verification would be implemented here
-        setSnackbar({
-          open: true,
-          message: 'Phone verification requires Twilio integration.',
-          severity: 'info'
-        });
+        // Phone verification
+        const formattedPhone = formatPhoneNumber(phoneNumber);
+        const verifyAction = await dispatch(verifyPhoneCode({ 
+          phone: formattedPhone, 
+          code: verificationCode 
+        }));
+        
+        if (verifyPhoneCode.fulfilled.match(verifyAction)) {
+          // Now try to login again with phone verification flag
+          const loginAction = await dispatch(login({ phone: formattedPhone, password }));
+          
+          if (login.fulfilled.match(loginAction)) {
+            setSnackbar({
+              open: true,
+              message: 'Phone verified. Logging in...',
+              severity: 'success'
+            });
+          } else if (login.rejected.match(loginAction)) {
+            setVerificationError(loginAction.payload as string);
+          }
+        } else if (verifyPhoneCode.rejected.match(verifyAction)) {
+          setVerificationError(verifyAction.payload as string);
+        }
       }
-    } catch (error) {
-      setVerificationError('Verification failed. Please try again.');
+    } catch (error: any) {
+      setVerificationError('Verification failed: ' + (error.message || 'Please try again.'));
     } finally {
       setVerificationLoading(false);
     }
@@ -241,20 +356,47 @@ const Login = () => {
 
   // Handle forgot password
   const handleForgotPassword = async () => {
+    // Email validation
+    if (!forgotPasswordEmail || !forgotPasswordEmail.includes('@')) {
+      setResetPasswordError('Please enter a valid email address');
+      return;
+    }
+    
     setResetPasswordLoading(true);
     setResetPasswordError('');
     
     try {
+      // Send password reset email using Supabase Auth
       const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       
       if (error) {
-        throw error;
+        // Handle specific error cases for better UX
+        if (error.message.includes('not found')) {
+          throw new Error('No account found with this email address');
+        } else if (error.message.includes('rate limit')) {
+          throw new Error('Too many requests. Please try again in a few minutes');
+        } else {
+          throw error;
+        }
       }
+      
+      // Also trigger an email via our custom email service for better formatting
+      // This is optional and depends on your needs
+      await supabase.functions.invoke('send-email', {
+        body: {
+          to: forgotPasswordEmail,
+          subject: "Opzon's Printing Press - Password Reset Request",
+          type: 'password_reset_request',
+          // No need to include reset link as Supabase already sends it
+          // Just a supplementary email for better communication
+        }
+      });
       
       setResetPasswordSuccess(true);
     } catch (error: any) {
+      console.error('Password reset error:', error);
       setResetPasswordError(error.message || 'Failed to send password reset email');
     } finally {
       setResetPasswordLoading(false);

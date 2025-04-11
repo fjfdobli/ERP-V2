@@ -51,7 +51,7 @@ const ResetPassword = () => {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    // Validate passwords
+    // Password validation
     if (newPassword !== confirmPassword) {
       setPasswordError('Passwords do not match');
       return;
@@ -62,40 +62,66 @@ const ResetPassword = () => {
       return;
     }
     
+    // Check password strength
+    const hasUpperCase = /[A-Z]/.test(newPassword);
+    const hasLowerCase = /[a-z]/.test(newPassword);
+    const hasNumbers = /\d/.test(newPassword);
+    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword);
+    
+    if (!(hasUpperCase && hasLowerCase && hasNumbers)) {
+      setPasswordError('Password must contain at least one uppercase letter, one lowercase letter, and one number');
+      return;
+    }
+    
+    if (!hasSpecialChar) {
+      setPasswordError('Password must contain at least one special character (e.g., !@#$%^&*)');
+      return;
+    }
+    
     setPasswordError('');
     setLoading(true);
     setError('');
     
     try {
-      // Get the access token from the URL
+      // Parse the URL for tokens
       const hashParams = new URLSearchParams(location.hash.substring(1));
       const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token') || '';
+      const type = hashParams.get('type');
       
+      // Validate the token and type
       if (!accessToken) {
         throw new Error('Invalid or missing reset token');
       }
       
-      // Set the session with the access token
+      if (type !== 'recovery') {
+        throw new Error('Invalid password reset link');
+      }
+      
+      // Set the session with the token
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: accessToken,
-        refresh_token: ''
+        refresh_token: refreshToken
       });
       
       if (sessionError) {
-        throw sessionError;
+        throw new Error(`Unable to verify your reset token: ${sessionError.message}`);
       }
       
-      // Update the password
+      // Update the user's password
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       });
       
       if (updateError) {
-        throw updateError;
+        throw new Error(`Failed to update password: ${updateError.message}`);
       }
       
-      // Password was updated successfully
+      // Password updated successfully
       setSuccess(true);
+      
+      // Sign the user out of this temporary session
+      await supabase.auth.signOut();
       
       // Redirect to login after 3 seconds
       setTimeout(() => {
