@@ -1,15 +1,92 @@
 import React, { useState, useEffect, CSSProperties } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { login, clearError } from '../redux/slices/authSlice';
-import { Box, Container, Paper, Typography, TextField, Button, Alert, InputAdornment, IconButton, Grid, Divider } from '@mui/material';
-import { Visibility, VisibilityOff, Email, Lock } from '@mui/icons-material';
+import { login, clearError, sendEmailVerificationCode, verifyEmailCode } from '../redux/slices/authSlice';
+import { 
+  Box, 
+  Container, 
+  Paper, 
+  Typography, 
+  TextField, 
+  Button, 
+  Alert, 
+  InputAdornment, 
+  IconButton, 
+  Grid, 
+  Divider,
+  Tabs,
+  Tab,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  OutlinedInput,
+  FormHelperText,
+  CircularProgress,
+  Snackbar
+} from '@mui/material';
+import { 
+  Visibility, 
+  VisibilityOff, 
+  Email, 
+  Lock,
+  Phone
+} from '@mui/icons-material';
 import PrintIcon from '@mui/icons-material/Print';
+import { supabase } from '../supabaseClient';
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`login-tabpanel-${index}`}
+      aria-labelledby={`login-tab-${index}`}
+      {...other}
+    >
+      {value === index && <Box sx={{ pt: 3 }}>{children}</Box>}
+    </div>
+  );
+}
 
 const Login = () => {
+  // Login states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  
+  // Verification states
+  const [loginMethod, setLoginMethod] = useState(0); // 0 for email, 1 for phone
+  const [showVerification, setShowVerification] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  
+  // Forgot password states
+  const [forgotPasswordDialog, setForgotPasswordDialog] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState(false);
+  const [resetPasswordError, setResetPasswordError] = useState('');
+  
+  // Snackbar
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success' as 'success' | 'error' | 'info' | 'warning'
+  });
   
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
@@ -22,19 +99,174 @@ const Login = () => {
     }
   }, [dispatch, isAuthenticated, navigate]);
 
-interface LoginFormValues {
-    email: string;
-    password: string;
-}
+  // Validate phone number (Philippines format)
+  const validatePhoneNumber = (phone: string) => {
+    // Basic Philippines phone number validation
+    // Formats: +639XX XXX XXXX or 09XX XXX XXXX
+    const regex = /^(\+?63|0)?[9]\d{9}$/;
+    const isValid = regex.test(phone.replace(/\s/g, ''));
+    
+    if (!isValid) {
+      setPhoneError('Please enter a valid Philippines phone number');
+      return false;
+    }
+    
+    setPhoneError('');
+    return true;
+  };
 
-const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  // Format phone number with +63 prefix if needed
+  const formatPhoneNumber = (phone: string) => {
+    const cleanedNumber = phone.replace(/\s/g, '').replace(/^0/, '');
+    
+    if (cleanedNumber.startsWith('9') && cleanedNumber.length === 10) {
+      return `+63${cleanedNumber}`;
+    } else if (cleanedNumber.startsWith('63') && cleanedNumber.length === 12) {
+      return `+${cleanedNumber}`;
+    } else if (cleanedNumber.startsWith('+63') && cleanedNumber.length === 13) {
+      return cleanedNumber;
+    }
+    
+    return phone;
+  };
+
+  // Handle phone number input change
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setPhoneNumber(value);
+    validatePhoneNumber(value);
+  };
+
+  // Handle login method change (email/phone)
+  const handleLoginMethodChange = (event: React.SyntheticEvent, newValue: number) => {
+    setLoginMethod(newValue);
+    setVerificationError('');
+  };
+
+  // Handle initial login form submission
+  const handleInitialSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const loginValues: LoginFormValues = { email, password };
-    dispatch(login(loginValues));
-};
+    
+    if (loginMethod === 1 && !validatePhoneNumber(phoneNumber)) {
+      return;
+    }
+    
+    try {
+      // For email login, we can directly attempt login
+      if (loginMethod === 0) {
+        const resultAction = await dispatch(login({ email, password }));
+        
+        if (login.rejected.match(resultAction)) {
+          // Check if the error is due to email verification
+          const errorMsg = resultAction.payload as string;
+          if (errorMsg.toLowerCase().includes('email') && errorMsg.toLowerCase().includes('verify')) {
+            setShowVerification(true);
+            await handleSendVerificationCode();
+          }
+        }
+      } else {
+        // For phone login
+        const formattedPhone = formatPhoneNumber(phoneNumber);
+        // In a real implementation, you'd have a phoneLogin function in authSlice
+        // For now, we'll just show a message that this isn't implemented
+        setSnackbar({
+          open: true,
+          message: 'Phone login requires Twilio integration. Please use email login.',
+          severity: 'info'
+        });
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+    }
+  };
+
+  // Send verification code
+  const handleSendVerificationCode = async () => {
+    setVerificationLoading(true);
+    setVerificationError('');
+    
+    try {
+      if (loginMethod === 0) {
+        const resultAction = await dispatch(sendEmailVerificationCode(email));
+        if (sendEmailVerificationCode.rejected.match(resultAction)) {
+          setVerificationError(resultAction.payload as string);
+        }
+      } else {
+        // Phone verification would be implemented here
+        const formattedPhone = formatPhoneNumber(phoneNumber);
+        setSnackbar({
+          open: true,
+          message: 'SMS verification requires Twilio integration.',
+          severity: 'info'
+        });
+      }
+    } catch (error) {
+      setVerificationError('Failed to send verification code. Please try again.');
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  // Verify code and login
+  const handleVerifyAndLogin = async () => {
+    setVerificationLoading(true);
+    
+    try {
+      if (loginMethod === 0) {
+        const verifyAction = await dispatch(verifyEmailCode({ 
+          email, 
+          code: verificationCode 
+        }));
+        
+        if (verifyEmailCode.fulfilled.match(verifyAction)) {
+          // Now try to login again
+          await dispatch(login({ email, password }));
+        } else if (verifyEmailCode.rejected.match(verifyAction)) {
+          setVerificationError(verifyAction.payload as string);
+        }
+      } else {
+        // Phone verification would be implemented here
+        setSnackbar({
+          open: true,
+          message: 'Phone verification requires Twilio integration.',
+          severity: 'info'
+        });
+      }
+    } catch (error) {
+      setVerificationError('Verification failed. Please try again.');
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  // Handle forgot password
+  const handleForgotPassword = async () => {
+    setResetPasswordLoading(true);
+    setResetPasswordError('');
+    
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      setResetPasswordSuccess(true);
+    } catch (error: any) {
+      setResetPasswordError(error.message || 'Failed to send password reset email');
+    } finally {
+      setResetPasswordLoading(false);
+    }
+  };
 
   const handleTogglePasswordVisibility = () => {
     setShowPassword(!showPassword);
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({...snackbar, open: false});
   };
 
   const bgSvgCode = `
@@ -52,34 +284,6 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         <rect x="0" y="0" width="60" height="45" rx="4" fill="#e0e0e0" stroke="#cccccc" stroke-width="1"/>
         <rect x="5" y="5" width="50" height="20" rx="2" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="0.5"/>
         <rect x="15" y="30" width="30" height="5" rx="1" fill="#e0e0e0"/>
-      </g>
-      
-      <g opacity="0.65" transform="translate(50,50)">
-        <path d="M0,0 L40,0 L55,15 L55,70 L0,70 Z" fill="#f0f0f0" stroke="#dddddd" stroke-width="1"/>
-        <path d="M40,0 L40,15 L55,15" fill="none" stroke="#dddddd" stroke-width="1"/>
-        <line x1="10" y1="25" x2="45" y2="25" stroke="#e0e0e0" stroke-width="1"/>
-        <line x1="10" y1="32" x2="45" y2="32" stroke="#e0e0e0" stroke-width="1"/>
-        <line x1="10" y1="39" x2="45" y2="39" stroke="#e0e0e0" stroke-width="1"/>
-      </g>
-      
-      <g opacity="0.65" transform="translate(70,420)">
-        <rect x="0" y="0" width="50" height="60" rx="3" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="1"/>
-        <text x="25" y="25" font-family="Arial" font-size="24" font-weight="bold" text-anchor="middle" fill="#d0d0d0">A</text>
-        <text x="25" y="45" font-family="Arial" font-size="14" text-anchor="middle" fill="#d9d9d9">a</text>
-      </g>
-      
-      <g opacity="0.65" transform="translate(900,220)">
-        <circle cx="30" cy="30" r="28" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="1"/>
-        <circle cx="30" cy="30" r="22" fill="#f0f0f0" stroke="#e0e0e0" stroke-width="0.5"/>
-        <circle cx="30" cy="30" r="6" fill="#e0e0e0"/>
-      </g>
-      
-      <g opacity="0.65" transform="translate(1080,50)">
-        <rect x="0" y="0" width="60" height="60" rx="3" fill="#f5f5f5" stroke="#e0e0e0" stroke-width="1"/>
-        <line x1="20" y1="0" x2="20" y2="60" stroke="#e0e0e0" stroke-width="1"/>
-        <line x1="40" y1="0" x2="40" y2="60" stroke="#e0e0e0" stroke-width="1"/>
-        <line x1="0" y1="20" x2="60" y2="20" stroke="#e0e0e0" stroke-width="1"/>
-        <line x1="0" y1="40" x2="60" y2="40" stroke="#e0e0e0" stroke-width="1"/>
       </g>
     </svg>
   `;
@@ -153,93 +357,214 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
                 </Alert>
               )}
               
-              <Box component="form" onSubmit={handleSubmit}>
-                <TextField
-                  margin="normal"
-                  required
-                  fullWidth
-                  id="email"
-                  label="Email Address"
-                  name="email"
-                  autoComplete="email"
-                  autoFocus
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Email color="primary" />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ mb: 3 }}
-                />
-                
-                <TextField
-                  margin="normal"
-                  required
-                  fullWidth
-                  name="password"
-                  label="Password"
-                  type={showPassword ? 'text' : 'password'}
-                  id="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Lock color="primary" />
-                      </InputAdornment>
-                    ),
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          aria-label="toggle password visibility"
-                          onClick={handleTogglePasswordVisibility}
-                          edge="end"
-                        >
-                          {showPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    )
-                  }}
-                  sx={{ mb: 3 }}
-                />
-                
-                <Button
-                  type="submit"
-                  fullWidth
-                  variant="contained"
-                  size="large"
-                  disabled={loading}
-                  sx={{ 
-                    mt: 2, 
-                    mb: 3,
-                    py: 1.5,
-                    fontSize: '1rem',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {loading ? 'Signing in...' : 'Sign In'}
-                </Button>
-                
-                <Divider sx={{ my: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    OR
-                  </Typography>
-                </Divider>
-                
-                <Box sx={{ textAlign: 'center', mt: 2 }}>
-                  <Typography variant="body2">
-                    Don't have an account?{' '}
-                    <Link to="/register" style={{ textDecoration: 'none', color: 'primary.main' }}>
-                      <Button color="primary" sx={{ fontWeight: 'bold' }}>
-                        Sign Up
+              {!showVerification ? (
+                <>
+                  <Tabs 
+                    value={loginMethod} 
+                    onChange={handleLoginMethodChange} 
+                    sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+                  >
+                    <Tab 
+                      icon={<Email />} 
+                      label="Email" 
+                      id="login-tab-0"
+                      aria-controls="login-tabpanel-0"
+                    />
+                    <Tab 
+                      icon={<Phone />} 
+                      label="Phone" 
+                      id="login-tab-1"
+                      aria-controls="login-tabpanel-1"
+                    />
+                  </Tabs>
+                  
+                  <Box component="form" onSubmit={handleInitialSubmit}>
+                    <TabPanel value={loginMethod} index={0}>
+                      <TextField
+                        required
+                        fullWidth
+                        id="email"
+                        label="Email Address"
+                        name="email"
+                        autoComplete="email"
+                        autoFocus
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Email color="primary" />
+                            </InputAdornment>
+                          ),
+                        }}
+                        sx={{ mb: 3 }}
+                      />
+                    </TabPanel>
+                    
+                    <TabPanel value={loginMethod} index={1}>
+                      <TextField
+                        required
+                        fullWidth
+                        id="phoneNumber"
+                        label="Phone Number"
+                        name="phoneNumber"
+                        autoComplete="tel"
+                        value={phoneNumber}
+                        onChange={handlePhoneChange}
+                        error={!!phoneError}
+                        helperText={phoneError || "Format: +63 9XX XXX XXXX or 09XX XXX XXXX"}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Phone color="primary" />
+                              <Typography variant="body2" sx={{ ml: 0.5 }}>
+                                +63
+                              </Typography>
+                            </InputAdornment>
+                          ),
+                        }}
+                        sx={{ mb: 3 }}
+                      />
+                    </TabPanel>
+                    
+                    <TextField
+                      required
+                      fullWidth
+                      name="password"
+                      label="Password"
+                      type={showPassword ? 'text' : 'password'}
+                      id="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <Lock color="primary" />
+                          </InputAdornment>
+                        ),
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              aria-label="toggle password visibility"
+                              onClick={handleTogglePasswordVisibility}
+                              edge="end"
+                            >
+                              {showPassword ? <VisibilityOff /> : <Visibility />}
+                            </IconButton>
+                          </InputAdornment>
+                        )
+                      }}
+                      sx={{ mb: 1 }}
+                    />
+                    
+                    {/* Forgot Password Link */}
+                    <Box sx={{ textAlign: 'right', mb: 2 }}>
+                      <Button
+                        color="primary"
+                        onClick={() => setForgotPasswordDialog(true)}
+                        sx={{ fontWeight: 'medium', textTransform: 'none' }}
+                      >
+                        Forgot Password?
                       </Button>
-                    </Link>
+                    </Box>
+                    
+                    <Button
+                      type="submit"
+                      fullWidth
+                      variant="contained"
+                      size="large"
+                      disabled={loading}
+                      sx={{ 
+                        mt: 1, 
+                        mb: 3,
+                        py: 1.5,
+                        fontSize: '1rem',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {loading ? 'Signing in...' : 'Sign In'}
+                    </Button>
+                  </Box>
+                </>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 2 }}>
+                  {loginMethod === 0 ? (
+                    <Email sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                  ) : (
+                    <Phone sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                  )}
+                  
+                  <Typography variant="h6" gutterBottom>
+                    Verification Required
                   </Typography>
+                  
+                  <Typography variant="body1" paragraph>
+                    {loginMethod === 0 
+                      ? `We've sent a verification code to ${email}`
+                      : `We've sent a verification code to ${formatPhoneNumber(phoneNumber)}`
+                    }
+                  </Typography>
+                  
+                  {verificationError && (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {verificationError}
+                    </Alert>
+                  )}
+                  
+                  <FormControl fullWidth variant="outlined" sx={{ mt: 1, mb: 3 }}>
+                    <InputLabel htmlFor="verification-code">Verification Code</InputLabel>
+                    <OutlinedInput
+                      id="verification-code"
+                      label="Verification Code"
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value)}
+                      inputProps={{ maxLength: 6 }}
+                    />
+                  </FormControl>
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Button 
+                      variant="outlined"
+                      onClick={() => setShowVerification(false)}
+                    >
+                      Back
+                    </Button>
+                    
+                    <Button
+                      variant="outlined" 
+                      onClick={handleSendVerificationCode}
+                      disabled={verificationLoading}
+                    >
+                      Resend Code
+                    </Button>
+                    
+                    <Button 
+                      variant="contained"
+                      onClick={handleVerifyAndLogin}
+                      disabled={verificationCode.length !== 6 || verificationLoading}
+                    >
+                      {verificationLoading ? <CircularProgress size={24} /> : 'Verify & Login'}
+                    </Button>
+                  </Box>
                 </Box>
+              )}
+              
+              <Divider sx={{ my: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  OR
+                </Typography>
+              </Divider>
+              
+              <Box sx={{ textAlign: 'center', mt: 2 }}>
+                <Typography variant="body2">
+                  Don't have an account?{' '}
+                  <Link to="/register" style={{ textDecoration: 'none', color: 'primary.main' }}>
+                    <Button color="primary" sx={{ fontWeight: 'bold' }}>
+                      Sign Up
+                    </Button>
+                  </Link>
+                </Typography>
               </Box>
             </Grid>
           </Grid>
@@ -251,6 +576,90 @@ const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
           </Typography>
         </Box>
       </Container>
+      
+      {/* Forgot Password Dialog */}
+      <Dialog 
+        open={forgotPasswordDialog} 
+        onClose={() => {
+          if (!resetPasswordLoading) {
+            setForgotPasswordDialog(false);
+            setResetPasswordSuccess(false);
+            setResetPasswordError('');
+          }
+        }}
+      >
+        <DialogTitle>Reset Password</DialogTitle>
+        <DialogContent>
+          {resetPasswordSuccess ? (
+            <Alert severity="success" sx={{ mt: 1 }}>
+              Password reset instructions have been sent to your email.
+            </Alert>
+          ) : (
+            <>
+              <Typography variant="body2" paragraph sx={{ mt: 1 }}>
+                Enter your email address and we'll send you instructions to reset your password.
+              </Typography>
+              
+              {resetPasswordError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {resetPasswordError}
+                </Alert>
+              )}
+              
+              <TextField
+                fullWidth
+                required
+                margin="normal"
+                id="reset-email"
+                label="Email Address"
+                name="email"
+                autoComplete="email"
+                value={forgotPasswordEmail}
+                onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Email color="primary" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button 
+            onClick={() => {
+              setForgotPasswordDialog(false);
+              setResetPasswordSuccess(false);
+              setResetPasswordError('');
+            }}
+          >
+            {resetPasswordSuccess ? 'Close' : 'Cancel'}
+          </Button>
+          
+          {!resetPasswordSuccess && (
+            <Button 
+              onClick={handleForgotPassword} 
+              variant="contained"
+              disabled={!forgotPasswordEmail || resetPasswordLoading}
+            >
+              {resetPasswordLoading ? <CircularProgress size={24} /> : 'Reset Password'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+      
+      {/* Snackbar for notifications */}
+      <Snackbar 
+        open={snackbar.open} 
+        autoHideDuration={6000} 
+        onClose={handleCloseSnackbar}
+      >
+        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

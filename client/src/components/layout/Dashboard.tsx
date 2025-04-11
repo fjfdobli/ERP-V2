@@ -2,11 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { logout } from '../../redux/slices/authSlice';
-import { AppBar, Box, CssBaseline, Divider, Drawer, IconButton, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, Button, Avatar, Menu, MenuItem, useMediaQuery, Collapse } from '@mui/material';
-import { Menu as MenuIcon, Dashboard as DashboardIcon, People as ClientsIcon, ShoppingCart as OrdersIcon, Inventory as InventoryIcon, Group as EmployeesIcon, LocalShipping as SuppliersIcon, HowToReg as AttendanceIcon, Build as MachineryIcon, BarChart as ReportsIcon, AccountCircle, Settings, ExitToApp, ChevronLeft, ExpandLess, ExpandMore, RequestQuote as RequestIcon, ImportContacts as ClientRequestIcon, Source as SupplierRequestIcon, Payments as PayrollIcon } from '@mui/icons-material';
+import { useThemeContext } from '../../App';
+import { 
+  AppBar, Box, CssBaseline, Divider, Drawer, IconButton, List, ListItem, 
+  ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, Button, 
+  Avatar, Menu, MenuItem, useMediaQuery, Collapse, Fade, Paper, useTheme
+} from '@mui/material';
+import { 
+  Menu as MenuIcon, Dashboard as DashboardIcon, People as ClientsIcon, 
+  ShoppingCart as OrdersIcon, Inventory as InventoryIcon, Group as EmployeesIcon, 
+  LocalShipping as SuppliersIcon, HowToReg as AttendanceIcon, Build as MachineryIcon, 
+  BarChart as ReportsIcon, AccountCircle, Settings, ExitToApp, ChevronLeft, 
+  ExpandLess, ExpandMore, RequestQuote as RequestIcon, ImportContacts as ClientRequestIcon, 
+  Source as SupplierRequestIcon, Payments as PayrollIcon, KeyboardArrowDown
+} from '@mui/icons-material';
 import PrintIcon from '@mui/icons-material/Print';
 
-const drawerWidth = 260;
+// Drawer width responsive to screen size
+const getDrawerWidth = () => {
+  if (typeof window !== 'undefined') {
+    if (window.innerWidth < 600) return 240;
+    return 280;
+  }
+  return 280; // Default for SSR
+};
+
+const drawerWidth = getDrawerWidth();
+
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { text: 'Clients', icon: <ClientsIcon />, path: '/clients' },
@@ -26,18 +48,35 @@ const menuItems = [
   { text: 'Reports', icon: <ReportsIcon />, path: '/reports' },
 ];
 
+
 const DashboardLayout: React.FC = () => {
+  const theme = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState<HTMLButtonElement | null>(null);
-  const [notificationsAnchor, setNotificationsAnchor] = useState<HTMLButtonElement | null>(null);
   const [openSubMenu, setOpenSubMenu] = useState<string | null>(null);
+  const [currentWidth, setCurrentWidth] = useState(drawerWidth);
   
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAppSelector(state => state.auth);
   
-  const isSmallScreen = useMediaQuery((theme) => theme.breakpoints.down('md'));
+  // Access theme context to use settings
+  const { darkMode, themeColor, compactView } = useThemeContext();
+  
+  const isXsScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('md'));
+  const isMediumScreen = useMediaQuery(theme.breakpoints.between('md', 'lg'));
+
+  // Update drawer width on resize
+  useEffect(() => {
+    const handleResize = () => {
+      setCurrentWidth(getDrawerWidth());
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const isOrdersPathActive = React.useCallback(() => {
     return location.pathname.includes('/orders');
@@ -77,10 +116,6 @@ const DashboardLayout: React.FC = () => {
     navigate('/settings');
   };
 
-  const handleNotificationsClose = () => {
-    setNotificationsAnchor(null);
-  };
-
   const handleLogout = () => {
     dispatch(logout());
     navigate('/login');
@@ -90,172 +125,317 @@ const DashboardLayout: React.FC = () => {
     return str && str.length > 0 ? str.charAt(0).toUpperCase() : 'U';
   };
 
+
   const drawer = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ 
+      height: '100%', 
+      display: 'flex', 
+      flexDirection: 'column',
+      bgcolor: 'var(--drawer-bg)',
+    }}>
       <Toolbar sx={{ 
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'center',
-        py: 1,
-        backgroundColor: 'primary.main',
-        color: 'white'
+        py: { xs: 1.5, md: 2 },
+        background: darkMode 
+          ? `linear-gradient(45deg, #222, #333)`
+          : `linear-gradient(45deg, var(--primary-color), var(--secondary-color))`,
+        color: 'white',
+        position: 'relative'
       }}>
-        <PrintIcon sx={{ fontSize: 28, mr: 1 }} />
-        <Typography variant="h6" noWrap component="div" fontWeight="bold">
-          Opzon's Printing Press
-        </Typography>
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          <Avatar 
+            sx={{ 
+              bgcolor: darkMode ? 'rgba(255,255,255,0.2)' : 'white',
+              color: darkMode ? 'white' : 'var(--primary-color)',
+              mr: 1.5,
+              width: { xs: 34, md: 40 },
+              height: { xs: 34, md: 40 }
+            }}
+          >
+            <PrintIcon sx={{ color: 'inherit !important' }} />
+          </Avatar>
+          <Typography 
+            variant="h6" 
+            noWrap 
+            component="div" 
+            fontWeight="bold"
+            sx={{
+              fontSize: { xs: '1rem', md: '1.2rem' },
+              letterSpacing: '0.5px',
+              color: 'white !important'
+            }}
+          >
+            Opzon's Printing
+          </Typography>
+        </Box>
         {isSmallScreen && (
           <IconButton 
             onClick={handleDrawerToggle}
             sx={{ 
               position: 'absolute', 
               right: 8,
-              color: 'white'
+              color: 'white !important',
+              bgcolor: 'rgba(255,255,255,0.1)',
+              '&:hover': {
+                bgcolor: 'rgba(255,255,255,0.2)',
+              }
             }}
+            size="small"
           >
-            <ChevronLeft />
+            <ChevronLeft sx={{ color: 'inherit !important' }} />
           </IconButton>
         )}
       </Toolbar>
       <Divider />
       
       {user && (
-        <Box sx={{ p: 2, textAlign: 'center' }}>
+        <Box 
+          sx={{ 
+            p: { xs: 2, md: 3 }, 
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            bgcolor: darkMode ? 'rgba(255, 255, 255, 0.03)' : 'rgba(25, 118, 210, 0.04)'
+          }}
+        >
           <Avatar 
             sx={{ 
-              width: 64, 
-              height: 64, 
+              width: { xs: 56, md: 70 }, 
+              height: { xs: 56, md: 70 }, 
               mx: 'auto', 
-              bgcolor: 'primary.main',
-              fontSize: '1.5rem',
-              fontWeight: 'bold'
+              bgcolor: 'var(--primary-color)',
+              color: 'white !important',
+              fontSize: { xs: '1.3rem', md: '1.6rem' },
+              fontWeight: 'bold',
+              boxShadow: darkMode 
+                ? '0px 4px 10px rgba(0,0,0,0.3)'
+                : '0px 4px 10px rgba(0,0,0,0.15)',
+              border: darkMode 
+                ? '2px solid rgba(255,255,255,0.1)'
+                : '2px solid white'
             }}
           >
             {getInitial(user.firstName) || getInitial(user.email)}
           </Avatar>
-          <Typography variant="subtitle1" sx={{ mt: 1, fontWeight: 'medium' }}>
+          <Typography 
+            variant="subtitle1" 
+            sx={{ 
+              mt: 1.5, 
+              fontWeight: 'medium',
+              fontSize: { xs: '0.95rem', md: '1.1rem' }
+            }}
+          >
             {user.firstName 
               ? `${user.firstName} ${user.lastName || ''}`
               : user.email}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          <Typography 
+            variant="body2" 
+            sx={{
+              color: darkMode ? 'white !important' : 'var(--primary-color) !important',
+              fontWeight: 500,
+              fontSize: { xs: '0.8rem', md: '0.9rem' },
+              bgcolor: darkMode 
+                ? 'rgba(255, 255, 255, 0.1)'  
+                : 'rgba(25, 118, 210, 0.1)',
+              px: 1.5,
+              py: 0.5,
+              borderRadius: 4,
+              mt: 0.5
+            }}
+          >
             {user.role || 'Admin'}
           </Typography>
         </Box>
       )}
       
-      <Divider />
+      <Divider sx={{ my: 1 }} />
       
-      <List sx={{ flexGrow: 1, px: 1 }}>
-        {menuItems.map((item) => (
-          <React.Fragment key={item.text}>
-            {item.children ? (
-              <>
-                <ListItem disablePadding>
+      <Box 
+        sx={{ 
+          flexGrow: 1, 
+          overflowY: 'auto',
+          '&::-webkit-scrollbar': {
+            width: '4px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'transparent',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: '#bbb',
+            borderRadius: '4px',
+          },
+          '&::-webkit-scrollbar-thumb:hover': {
+            background: '#999',
+          },
+        }}
+      >
+        <List sx={{ px: { xs: 1, md: 1.5 } }}>
+          {menuItems.map((item) => (
+            <React.Fragment key={item.text}>
+              {item.children ? (
+                <>
+                  <ListItem disablePadding>
+                    <ListItemButton
+                      onClick={() => handleSubMenuToggle(item.text)}
+                      sx={{ 
+                        borderRadius: theme.shape.borderRadius,
+                        mb: 0.5,
+                        py: 1,
+                        backgroundColor: isOrdersPathActive() 
+                          ? 'rgba(25, 118, 210, 0.12)' 
+                          : 'transparent',
+                        '&:hover': {
+                          backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                        },
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <ListItemIcon sx={{ 
+                        minWidth: { xs: 36, md: 40 },
+                        color: isOrdersPathActive() ? 'primary.main' : 'inherit',
+                      }}>
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText 
+                        primary={item.text} 
+                        primaryTypographyProps={{ 
+                          fontSize: { xs: '0.875rem', md: '0.95rem' },
+                          fontWeight: isOrdersPathActive() ? 600 : 400
+                        }}
+                      />
+                      {openSubMenu === item.text ? <ExpandLess /> : <ExpandMore />}
+                    </ListItemButton>
+                  </ListItem>
+                  
+                  <Collapse in={openSubMenu === item.text} timeout="auto" unmountOnExit>
+                    <List component="div" disablePadding>
+                      {item.children.map((child) => (
+                        <ListItem key={child.text} disablePadding>
+                          <ListItemButton
+                            sx={{ 
+                              pl: { xs: 4, md: 4.5 },
+                              borderRadius: theme.shape.borderRadius,
+                              mb: 0.5,
+                              py: 0.75,
+                              transition: 'all 0.2s',
+                              '&.Mui-selected': {
+                                backgroundColor: 'primary.main',
+                                color: 'white',
+                                '& .MuiListItemIcon-root': {
+                                  color: 'white',
+                                },
+                                '&:hover': {
+                                  backgroundColor: 'primary.dark',
+                                },
+                              },
+                              '&:hover': {
+                                backgroundColor: 'rgba(25, 118, 210, 0.08)',
+                              }
+                            }}
+                            selected={location.pathname === child.path}
+                            onClick={() => {
+                              navigate(child.path);
+                              if (isSmallScreen) {
+                                setMobileOpen(false);
+                              }
+                            }}
+                          >
+                            <ListItemIcon sx={{ 
+                              minWidth: { xs: 32, md: 36 },
+                              fontSize: '0.9rem'
+                            }}>
+                              {child.icon}
+                            </ListItemIcon>
+                            <ListItemText 
+                              primary={child.text} 
+                              primaryTypographyProps={{ 
+                                fontSize: { xs: '0.8rem', md: '0.875rem' }
+                              }}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      ))}
+                    </List>
+                  </Collapse>
+                </>
+              ) : (
+                <ListItem disablePadding sx={{ mb: 0.5 }}>
                   <ListItemButton
-                    onClick={() => handleSubMenuToggle(item.text)}
                     sx={{ 
-                      borderRadius: 1,
-                      mb: 0.5,
-                      backgroundColor: isOrdersPathActive() 
-                        ? 'rgba(25, 118, 210, 0.12)' 
-                        : 'transparent',
+                      borderRadius: theme.shape.borderRadius,
+                      py: 1,
+                      transition: 'all 0.2s',
+                      '&.Mui-selected': {
+                        backgroundColor: 'primary.main',
+                        color: 'white',
+                        '& .MuiListItemIcon-root': {
+                          color: 'white',
+                        },
+                        '&:hover': {
+                          backgroundColor: 'primary.dark',
+                        },
+                      },
                       '&:hover': {
                         backgroundColor: 'rgba(25, 118, 210, 0.08)',
                       }
                     }}
+                    selected={location.pathname === item.path}
+                    onClick={() => {
+                      navigate(item.path);
+                      if (isSmallScreen) {
+                        setMobileOpen(false);
+                      }
+                    }}
                   >
-                    <ListItemIcon sx={{ minWidth: 40 }}>
+                    <ListItemIcon sx={{ 
+                      minWidth: { xs: 36, md: 40 },
+                      color: location.pathname === item.path ? 'inherit' : 'text.secondary'
+                    }}>
                       {item.icon}
                     </ListItemIcon>
-                    <ListItemText primary={item.text} />
-                    {openSubMenu === item.text ? <ExpandLess /> : <ExpandMore />}
+                    <ListItemText 
+                      primary={item.text} 
+                      primaryTypographyProps={{ 
+                        fontSize: { xs: '0.875rem', md: '0.95rem' },
+                        fontWeight: location.pathname === item.path ? 600 : 400
+                      }}
+                    />
                   </ListItemButton>
                 </ListItem>
-                
-                <Collapse in={openSubMenu === item.text} timeout="auto" unmountOnExit>
-                  <List component="div" disablePadding>
-                    {item.children.map((child) => (
-                      <ListItem key={child.text} disablePadding>
-                        <ListItemButton
-                          sx={{ 
-                            pl: 4,
-                            borderRadius: 1,
-                            mb: 0.5,
-                            '&.Mui-selected': {
-                              backgroundColor: 'primary.light',
-                              color: 'white',
-                              '& .MuiListItemIcon-root': {
-                                color: 'white',
-                              },
-                            },
-                            '&:hover': {
-                              backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                            }
-                          }}
-                          selected={location.pathname === child.path}
-                          onClick={() => {
-                            navigate(child.path);
-                            if (isSmallScreen) {
-                              setMobileOpen(false);
-                            }
-                          }}
-                        >
-                          <ListItemIcon sx={{ minWidth: 36 }}>
-                            {child.icon}
-                          </ListItemIcon>
-                          <ListItemText primary={child.text} />
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
-                  </List>
-                </Collapse>
-              </>
-            ) : (
-              <ListItem disablePadding>
-                <ListItemButton
-                  sx={{ 
-                    borderRadius: 1,
-                    mb: 0.5,
-                    '&.Mui-selected': {
-                      backgroundColor: 'primary.light',
-                      color: 'white',
-                      '& .MuiListItemIcon-root': {
-                        color: 'white',
-                      },
-                    },
-                    '&:hover': {
-                      backgroundColor: 'rgba(25, 118, 210, 0.08)',
-                    }
-                  }}
-                  selected={location.pathname === item.path}
-                  onClick={() => {
-                    navigate(item.path);
-                    if (isSmallScreen) {
-                      setMobileOpen(false);
-                    }
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: 40 }}>
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText primary={item.text} />
-                </ListItemButton>
-              </ListItem>
-            )}
-          </React.Fragment>
-        ))}
-      </List>
+              )}
+            </React.Fragment>
+          ))}
+        </List>
+      </Box>
       
-      <Divider />
-      
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: 2, mt: 1 }}>
         <Button
-          variant="outlined"
+          variant="contained"
           fullWidth
+          color="primary"
           startIcon={<ExitToApp />}
           onClick={handleLogout}
-          sx={{ justifyContent: 'flex-start', py: 1 }}
+          sx={{ 
+            py: 1,
+            textTransform: 'none',
+            borderRadius: '8px',
+            fontWeight: 500,
+            boxShadow: 2,
+            '&:hover': {
+              boxShadow: 4,
+            }
+          }}
         >
           Logout
         </Button>
@@ -280,113 +460,113 @@ const DashboardLayout: React.FC = () => {
   };
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh' }}>
+    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <CssBaseline />
       
       <AppBar
         position="fixed"
+        elevation={0}
         sx={{
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          ml: { md: `${drawerWidth}px` },
-          boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+          width: { sm: `calc(100% - ${currentWidth}px)` },
+          ml: { sm: `${currentWidth}px` },
+          bgcolor: 'var(--appbar-bg)',
+          color: 'var(--text-color)',
+          borderBottom: '1px solid var(--border-color)',
+          backdropFilter: 'blur(8px)',
+          zIndex: (theme) => theme.zIndex.drawer + 1,
         }}
       >
-        <Toolbar>
+        <Toolbar sx={{ height: { xs: 64, md: 70 } }}>
           <IconButton
             color="inherit"
             aria-label="open drawer"
             edge="start"
             onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { md: 'none' } }}
+            sx={{ 
+              mr: 2, 
+              display: { sm: 'none' },
+              color: 'primary.main'
+            }}
           >
             <MenuIcon />
           </IconButton>
           
-          <Typography
-            variant="h6"
-            noWrap
-            component="div"
-            sx={{ flexGrow: 1, display: { xs: 'none', sm: 'block' } }}
-          >
-            {getPageTitle()}
-          </Typography>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            py: 1,
+            px: { xs: 1, sm: 2 },
+            borderRadius: 2,
+            bgcolor: 'rgba(25, 118, 210, 0.04)',
+            mr: 2
+          }}>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{ 
+                fontWeight: 600,
+                fontSize: { xs: '1rem', md: '1.2rem' },
+                color: 'primary.main',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              {getPageTitle()}
+            </Typography>
+          </Box>
           
-          <Menu
-            anchorEl={notificationsAnchor}
-            open={Boolean(notificationsAnchor)}
-            onClose={handleNotificationsClose}
-            PaperProps={{
-              sx: { 
-                width: 320,
-                maxHeight: 400,
-                mt: 1.5,
-                '& .MuiList-root': {
-                  py: 0
-                }
-              }
-            }}
-            transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-            anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-          >
-            <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #eee' }}>
-              <Typography variant="subtitle1" fontWeight="medium">Notifications</Typography>
-            </Box>
-            <MenuItem onClick={handleNotificationsClose} sx={{ py: 1.5 }}>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                  Low inventory alert: Black Ink
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  10 minutes ago
-                </Typography>
-              </Box>
-            </MenuItem>
-            <MenuItem onClick={handleNotificationsClose} sx={{ py: 1.5 }}>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                  New order received: ORD-2025-00123
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  1 hour ago
-                </Typography>
-              </Box>
-            </MenuItem>
-            <MenuItem onClick={handleNotificationsClose} sx={{ py: 1.5 }}>
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                  Maintenance required: Digital Printer
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  3 hours ago
-                </Typography>
-              </Box>
-            </MenuItem>
-            <Box sx={{ p: 1, borderTop: '1px solid #eee', textAlign: 'center' }}>
-              <Button size="small">View All</Button>
-            </Box>
-          </Menu>
+          <Box sx={{ flexGrow: 1 }} />
           
           <Button
             onClick={handleUserMenuOpen}
             color="inherit"
-            startIcon={
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.dark' }}>
-                {getInitial(user?.firstName) || getInitial(user?.email)}
-              </Avatar>
-            }
-            endIcon={<MenuIcon />}
-            sx={{ textTransform: 'none' }}
+            sx={{ 
+              ml: 2, 
+              borderRadius: 8,
+              px: { xs: 1, sm: 2 },
+              py: 1,
+              textTransform: 'none',
+              bgcolor: Boolean(userMenuAnchor) ? 'rgba(0,0,0,0.04)' : 'transparent',
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.08)' },
+            }}
+            endIcon={isXsScreen ? undefined : <KeyboardArrowDown />}
           >
-            <Box sx={{ textAlign: 'left', display: { xs: 'none', sm: 'block' } }}>
-              <Typography variant="body2" sx={{ fontWeight: 'medium', lineHeight: 1.2 }}>
-                {user?.firstName 
-                  ? `${user.firstName} ${user.lastName || ''}`
-                  : user?.email}
-              </Typography>
-              <Typography variant="caption" color="inherit" sx={{ opacity: 0.8 }}>
-                {user?.role || 'Admin'}
-              </Typography>
-            </Box>
+            <Avatar 
+              sx={{ 
+                width: 32, 
+                height: 32, 
+                bgcolor: 'primary.main',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+                mr: isXsScreen ? 0 : 1.5
+              }}
+            >
+              {getInitial(user?.firstName) || getInitial(user?.email)}
+            </Avatar>
+            {!isXsScreen && (
+              <Box sx={{ textAlign: 'left' }}>
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    fontWeight: 'medium', 
+                    lineHeight: 1.2,
+                    color: 'text.primary'
+                  }}
+                >
+                  {user?.firstName 
+                    ? `${user.firstName} ${user.lastName || ''}`
+                    : user?.email}
+                </Typography>
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    color: 'text.secondary',
+                    fontSize: '0.7rem'
+                  }}
+                >
+                  {user?.role || 'Admin'}
+                </Typography>
+              </Box>
+            )}
           </Button>
           
           <Menu
@@ -394,29 +574,62 @@ const DashboardLayout: React.FC = () => {
             open={Boolean(userMenuAnchor)}
             onClose={handleUserMenuClose}
             PaperProps={{
-              sx: { width: 200, mt: 1.5 }
+              elevation: 3,
+              sx: { 
+                width: 220, 
+                mt: 1.5,
+                overflow: 'visible',
+                borderRadius: 2,
+                '&:before': {
+                  content: '""',
+                  display: 'block',
+                  position: 'absolute',
+                  top: 0,
+                  right: 14,
+                  width: 10,
+                  height: 10,
+                  bgcolor: 'background.paper',
+                  transform: 'translateY(-50%) rotate(45deg)',
+                  zIndex: 0,
+                },
+              }
             }}
             transformOrigin={{ horizontal: 'right', vertical: 'top' }}
             anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            TransitionComponent={Fade}
+            transitionDuration={200}
           >
-            <MenuItem onClick={handleProfileClick}>
+            <Box sx={{ pt: 2, pb: 1.5, px: 2, mb: 1 }}>
+              <Typography variant="subtitle2" fontWeight="bold">
+                {user?.firstName 
+                  ? `${user.firstName} ${user.lastName || ''}`
+                  : user?.email}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+                {user?.email}
+              </Typography>
+            </Box>
+            
+            <Divider />
+            
+            <MenuItem onClick={handleProfileClick} sx={{ py: 1.5 }}>
               <ListItemIcon>
-                <AccountCircle fontSize="small" />
+                <AccountCircle fontSize="small" color="primary" />
               </ListItemIcon>
-              <ListItemText>My Profile</ListItemText>
+              <ListItemText primary="My Profile" />
             </MenuItem>
-            <MenuItem onClick={handleSettingsClick}>
+            <MenuItem onClick={handleSettingsClick} sx={{ py: 1.5 }}>
               <ListItemIcon>
-                <Settings fontSize="small" />
+                <Settings fontSize="small" color="primary" />
               </ListItemIcon>
-              <ListItemText>Settings</ListItemText>
+              <ListItemText primary="Settings" />
             </MenuItem>
             <Divider />
-            <MenuItem onClick={handleLogout}>
+            <MenuItem onClick={handleLogout} sx={{ py: 1.5 }}>
               <ListItemIcon>
-                <ExitToApp fontSize="small" />
+                <ExitToApp fontSize="small" color="error" />
               </ListItemIcon>
-              <ListItemText>Logout</ListItemText>
+              <ListItemText primary="Logout" primaryTypographyProps={{ color: 'error' }} />
             </MenuItem>
           </Menu>
         </Toolbar>
@@ -424,36 +637,47 @@ const DashboardLayout: React.FC = () => {
       
       <Box
         component="nav"
-        sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}
-        aria-label="mailbox folders"
+        sx={{ 
+          width: { sm: currentWidth }, 
+          flexShrink: { sm: 0 } 
+        }}
+        aria-label="dashboard navigation"
       >
+        {/* Mobile drawer */}
         <Drawer
           variant="temporary"
           open={mobileOpen}
           onClose={handleDrawerToggle}
           ModalProps={{
-            keepMounted: true,
+            keepMounted: true, // Better mobile performance
           }}
           sx={{
-            display: { xs: 'block', md: 'none' },
+            display: { xs: 'block', sm: 'none' },
             '& .MuiDrawer-paper': { 
               boxSizing: 'border-box', 
-              width: drawerWidth,
-              borderRight: '1px solid rgba(0, 0, 0, 0.08)'
+              width: currentWidth,
+              boxShadow: 3,
+              bgcolor: 'var(--drawer-bg)',
+              color: 'var(--text-color)',
+              borderRight: '1px solid var(--border-color)'
             },
           }}
         >
           {drawer}
         </Drawer>
         
+        {/* Desktop drawer */}
         <Drawer
           variant="permanent"
           sx={{
-            display: { xs: 'none', md: 'block' },
+            display: { xs: 'none', sm: 'block' },
             '& .MuiDrawer-paper': { 
               boxSizing: 'border-box', 
-              width: drawerWidth,
-              borderRight: '1px solid rgba(0, 0, 0, 0.08)'
+              width: currentWidth,
+              boxShadow: 'none',
+              bgcolor: 'var(--drawer-bg)',
+              color: 'var(--text-color)',
+              borderRight: '1px solid var(--border-color)'
             },
           }}
           open
@@ -462,20 +686,88 @@ const DashboardLayout: React.FC = () => {
         </Drawer>
       </Box>
       
+      {/* Main content */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          width: { md: `calc(100% - ${drawerWidth}px)` },
-          backgroundColor: 'background.default',
-          minHeight: '100vh',
+          p: { xs: 2, sm: 3 },
+          width: { sm: `calc(100% - ${currentWidth}px)` },
+          backgroundColor: 'var(--background-color)',
+          height: '100vh',
+          overflow: 'auto',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          '&::-webkit-scrollbar': {
+            width: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: darkMode ? '#555' : '#bbb',
+            borderRadius: '4px',
+          },
+          '&::-webkit-scrollbar-thumb:hover': {
+            background: darkMode ? '#777' : '#999',
+          },
         }}
       >
-        <Toolbar />
-        <Outlet /> 
+        <Toolbar sx={{ mb: { xs: 1, sm: 2 } }} />
+        <Paper 
+          elevation={0}
+          sx={{ 
+            flexGrow: 1, 
+            borderRadius: 3,
+            p: { xs: 2, sm: 3 },
+            bgcolor: 'var(--card-bg)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'auto' // Changed from 'hidden' to 'auto' to enable scrolling
+          }}
+        >
+          <Outlet />
+          
+          {/* Small indicator to show active theme settings (can be removed in production) */}
+          <Box
+            sx={{
+              position: 'fixed',
+              bottom: 16,
+              right: 16,
+              bgcolor: 'rgba(0,0,0,0.05)',
+              borderRadius: 2,
+              p: 1,
+              fontSize: compactView ? '0.7rem' : '0.8rem',
+              opacity: 0.8,
+              zIndex: 999,
+              pointerEvents: 'none',
+              color: darkMode ? '#fff' : '#333',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              cursor: 'default',
+              '&:hover': { opacity: 1 }
+            }}
+          >
+            <Typography variant="caption" fontWeight="bold" sx={{ fontSize: 'inherit' }}>
+              Theme:
+            </Typography>
+            <Box 
+              sx={{ 
+                width: 10, 
+                height: 10, 
+                borderRadius: '50%', 
+                bgcolor: 'var(--primary-color)',
+                display: 'inline-block',
+                mr: 0.5
+              }} 
+            />
+            <Typography variant="caption" sx={{ fontSize: 'inherit' }}>
+              {themeColor} • {darkMode ? 'Dark' : 'Light'} • {compactView ? 'Compact' : 'Standard'}
+            </Typography>
+          </Box>
+        </Paper>
       </Box>
     </Box>
   );

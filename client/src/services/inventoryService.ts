@@ -121,18 +121,23 @@ export const inventoryService = {
    * Get low stock inventory items (quantity < minStockLevel)
    */
   async getLowStockItems(): Promise<InventoryItem[]> {
-    const { data, error } = await supabase
-      .from(INVENTORY_TABLE)
-      .select('*')
-      .lt('quantity', 'minStockLevel')
-      .order('itemName', { ascending: true });
-
-    if (error) {
+    try {
+      // Get all inventory items first
+      const { data, error } = await supabase
+        .from(INVENTORY_TABLE)
+        .select('*')
+        .order('itemName', { ascending: true });
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      // Filter client-side for items where quantity is less than minStockLevel
+      return (data || []).filter(item => item.quantity <= item.minStockLevel);
+    } catch (error) {
       console.error('Error fetching low stock items:', error);
-      throw new Error(error.message);
+      throw error;
     }
-
-    return data || [];
   },
 
   /**

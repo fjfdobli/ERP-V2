@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction, createSelector } from '@reduxjs/toolkit';
 import { RootState } from '../store';
 import { clientOrdersService, ClientOrder } from '../../services/clientOrdersService';
 import { OrderRequestItem } from '../../services/orderRequestsService';
@@ -159,20 +159,26 @@ const clientOrdersSlice = createSlice({
 // Export actions
 export const { resetError } = clientOrdersSlice.actions;
 
-// Export selectors
+// Base selectors (not memoized as they return primitive/scalar values)
 export const selectAllClientOrders = (state: RootState) => state.orders.clientOrders;
 export const selectClientOrdersLoading = (state: RootState) => state.orders.loading;
 export const selectClientOrdersError = (state: RootState) => state.orders.error;
 
-// Selectors for filtered orders
-export const selectApprovedOrders = (state: RootState) => 
-  state.orders.clientOrders.filter(order => order.status === 'Approved');
+// Memoized selectors for filtered orders
+export const selectApprovedOrders = createSelector(
+  [selectAllClientOrders],
+  (clientOrders) => clientOrders.filter(order => order.status === 'Approved')
+);
 
-export const selectCompletedOrders = (state: RootState) => 
-  state.orders.clientOrders.filter(order => order.status === 'Completed');
+export const selectCompletedOrders = createSelector(
+  [selectAllClientOrders],
+  (clientOrders) => clientOrders.filter(order => order.status === 'Completed')
+);
 
-export const selectRejectedOrders = (state: RootState) => 
-  state.orders.clientOrders.filter(order => order.status === 'Rejected');
+export const selectRejectedOrders = createSelector(
+  [selectAllClientOrders],
+  (clientOrders) => clientOrders.filter(order => order.status === 'Rejected')
+);
 
 // Export reducer
 export default clientOrdersSlice.reducer;

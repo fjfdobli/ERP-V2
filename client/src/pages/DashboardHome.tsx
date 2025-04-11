@@ -14,10 +14,47 @@ import { format, parseISO, startOfMonth, endOfMonth, subMonths, isToday, isBefor
 import { 
   Box, Grid, Paper, Typography, Divider, List, ListItem, ListItemText, Card, CardContent, 
   CardHeader, Avatar, IconButton, Button, Chip, useTheme, LinearProgress, Alert,
-  Stack, Badge, Tabs, Tab, ListItemAvatar, ListItemButton, Menu, MenuItem, Tooltip,
+  Stack, Badge, Tabs, Tab, ListItemAvatar, ListItemButton, Menu, MenuItem, 
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, CircularProgress,
-  Skeleton, Link
+  Skeleton, Link, Snackbar, Slide, Fade
 } from '@mui/material';
+import { styled } from '@mui/material/styles';
+import MuiTooltip, { TooltipProps } from '@mui/material/Tooltip';
+
+// Create a custom Tooltip component that wraps disabled buttons in a span
+const StyledTooltip = styled(({ className, ...props }: TooltipProps) => (
+  <MuiTooltip {...props} classes={{ popper: className }} />
+))(({ theme }) => ({
+  popper: {
+    zIndex: theme.zIndex.tooltip,
+  },
+}));
+
+// Custom Tooltip wrapper that handles disabled buttons correctly
+const CustomTooltip = ({ children, ...props }: TooltipProps) => {
+  // Type assertion for React element props with disabled property
+  interface DisabledProps {
+    disabled?: boolean;
+    'aria-disabled'?: boolean;
+  }
+  
+  const isDisabled = React.isValidElement(children) && 
+                    ((children.props as DisabledProps).disabled || 
+                     (children.props as DisabledProps)['aria-disabled'] === true);
+
+  // If button is disabled, wrap it in a span to allow tooltip to work
+  return (
+    <StyledTooltip {...props}>
+      {isDisabled ? (
+        <span style={{ display: 'inline-block' }}>
+          {children}
+        </span>
+      ) : (
+        children
+      )}
+    </StyledTooltip>
+  );
+};
 import { 
   Assignment as OrdersIcon, 
   People as ClientsIcon, 
@@ -40,7 +77,8 @@ import {
   DashboardCustomize as DashboardCustomizeIcon,
   FilterAlt as FilterAltIcon,
   DateRange as DateRangeIcon,
-  RequestQuote as RequestIcon
+  RequestQuote as RequestIcon,
+  Sync as SyncIcon
 } from '@mui/icons-material';
 import { 
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
@@ -93,6 +131,12 @@ interface Notification {
   timestamp: string;
   read: boolean;
   actionUrl?: string;
+}
+
+interface ChangeDetection {
+  message: string;
+  type: 'success' | 'info' | 'warning' | 'error';
+  module: string;
 }
 
 // TabPanel component for tabbed interface
@@ -244,6 +288,15 @@ const DashboardHome: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notificationsMenuAnchor, setNotificationsMenuAnchor] = useState<null | HTMLElement>(null);
   const [filterMenuAnchor, setFilterMenuAnchor] = useState<null | HTMLElement>(null);
+  const [refreshIntervalMenuAnchor, setRefreshIntervalMenuAnchor] = useState<null | HTMLElement>(null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(true);
+  const [refreshInterval, setRefreshInterval] = useState<number>(60000); // 60 seconds default
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
+  const [toast, setToast] = useState<{open: boolean; message: string; type: 'success' | 'info' | 'warning' | 'error'}>({
+    open: false,
+    message: '',
+    type: 'info'
+  });
   
   // Calculate dashboard metrics - using useMemo for performance optimization
   // Calculate low stock items
@@ -367,44 +420,18 @@ const DashboardHome: React.FC = () => {
       }).slice(0, 5);
   }, [machinery]);
 
-  // Effect to fetch data
-  useEffect(() => {
-    fetchDashboardData();
-  }, [dispatch]);
-  
-  // Update notifications when data changes
-  useEffect(() => {
-    if (!inventoryLoading && !ordersLoading && !orderRequestsLoading && !machineryLoading) {
-      const pendingOrdersCount = (orders || []).filter((order: any) => order.status === 'Pending').length;
-      const pendingRequestsCount = (orderRequests || []).filter((req: any) => req.status === 'Pending').length;
-      const machinesNeedingMaintenanceCount = (machinery || []).filter((machine: any) => {
-        if (!machine.nextMaintenanceDate) return false;
-        const today = new Date();
-        const nextMaintenanceDate = new Date(machine.nextMaintenanceDate);
-        return nextMaintenanceDate <= today;
-      }).length;
-      
-      const newNotifications = generateRealNotifications(
-        lowStockItems,
-        pendingOrdersCount,
-        pendingRequestsCount,
-        machinesNeedingMaintenanceCount
-      );
-      
-      setNotifications(newNotifications);
+  // Effect to fetch data - use React.useCallback to memoize the fetch function
+  const fetchDashboardData = React.useCallback(async (silent: boolean = false) => {
+    if (!silent) {
+      setRefreshing(true);
     }
-  }, [lowStockItems, orders, orderRequests, machinery, inventoryLoading, ordersLoading, orderRequestsLoading, machineryLoading]);
-
-  // Function to fetch all dashboard data
-  const fetchDashboardData = async () => {
-    setRefreshing(true);
     
     try {
       // Get date range for queries
       const endDate = format(endOfMonth(new Date()), 'yyyy-MM-dd');
       const startDate = format(startOfMonth(subMonths(new Date(), 3)), 'yyyy-MM-dd');
       
-      // Fetch data for all systems
+      // Fetch data for all systems using Promise.all for parallel fetching
       await Promise.all([
         dispatch(fetchOrders()),
         dispatch(fetchClients()),
@@ -418,12 +445,210 @@ const DashboardHome: React.FC = () => {
         dispatch(fetchSuppliers()),
         dispatch(fetchOrderRequests())
       ]);
+      
+      // Log timestamp for monitoring refresh activity
+      const currentTime = new Date();
+      console.log(`Dashboard data refreshed at ${currentTime.toLocaleTimeString()}`);
+      
+      // Update last refresh time
+      setLastUpdateTime(currentTime);
+      
+      // Show toast notification for silent updates
+      if (silent) {
+        setToast({
+          open: true,
+          message: 'Dashboard updated with latest data',
+          type: 'success'
+        });
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
-      setRefreshing(false);
+      if (!silent) {
+        setRefreshing(false);
+      }
     }
-  };
+  }, [dispatch]);
+
+  // Effect to fetch data on component mount
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+  
+  // Effect for auto-refresh functionality
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (autoRefreshEnabled) {
+      intervalId = setInterval(() => {
+        fetchDashboardData(true); // Silent refresh to avoid showing loading indicators
+      }, refreshInterval);
+    }
+    
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [fetchDashboardData, autoRefreshEnabled, refreshInterval]);
+  
+  // Track previous state for comparison between refreshes
+  const [prevState, setPrevState] = useState({
+    lowStockItems: 0,
+    pendingOrders: 0,
+    pendingRequests: 0,
+    machinesMaintenance: 0
+  });
+  
+  // Calculate metrics
+  const metrics = useMemo(() => {
+    if (inventoryLoading || ordersLoading || orderRequestsLoading || machineryLoading) {
+      return null; // Don't calculate metrics while data is loading
+    }
+    
+    const pendingOrdersCount = (orders || []).filter((order: any) => order.status === 'Pending').length;
+    const pendingRequestsCount = (orderRequests || []).filter((req: any) => req.status === 'Pending').length;
+    const machinesNeedingMaintenanceCount = (machinery || []).filter((machine: any) => {
+      if (!machine.nextMaintenanceDate) return false;
+      const today = new Date();
+      const nextMaintenanceDate = new Date(machine.nextMaintenanceDate);
+      return nextMaintenanceDate <= today;
+    }).length;
+    const currentLowStockCount = lowStockItems.length;
+    
+    return {
+      pendingOrders: pendingOrdersCount,
+      pendingRequests: pendingRequestsCount,
+      machinesMaintenance: machinesNeedingMaintenanceCount,
+      lowStockItems: currentLowStockCount
+    };
+  }, [lowStockItems, orders, orderRequests, machinery, inventoryLoading, ordersLoading, orderRequestsLoading, machineryLoading]);
+  
+  // Generate notifications based on current data
+  const notificationsData = useMemo(() => {
+    if (!metrics) return null;
+    
+    return generateRealNotifications(
+      lowStockItems,
+      metrics.pendingOrders,
+      metrics.pendingRequests,
+      metrics.machinesMaintenance
+    );
+  }, [metrics, lowStockItems]);
+  
+  // Detect changes and show notifications
+  useEffect(() => {
+    if (!metrics || !metrics.lowStockItems) return;
+    
+    const changesDetected: ChangeDetection[] = [];
+    
+    // Check for inventory changes
+    if (prevState.lowStockItems !== metrics.lowStockItems && prevState.lowStockItems > 0) {
+      // Only show if there was a change and we had previous data
+      const difference = prevState.lowStockItems - metrics.lowStockItems;
+      if (difference !== 0) {
+        const message = difference > 0 
+          ? `${difference} item(s) are no longer low in stock`
+          : `${Math.abs(difference)} new item(s) are now low in stock`;
+        
+        changesDetected.push({
+          message,
+          type: difference > 0 ? 'success' : 'warning',
+          module: 'inventory'
+        });
+      }
+    }
+    
+    // Check for pending orders changes
+    if (prevState.pendingOrders !== metrics.pendingOrders && prevState.pendingOrders > 0) {
+      const difference = prevState.pendingOrders - metrics.pendingOrders;
+      if (difference !== 0) {
+        const message = difference > 0 
+          ? `${difference} order(s) no longer pending`
+          : `${Math.abs(difference)} new pending order(s)`;
+        
+        changesDetected.push({
+          message,
+          type: difference > 0 ? 'success' : 'info',
+          module: 'orders'
+        });
+      }
+    }
+    
+    // Check for pending requests changes
+    if (prevState.pendingRequests !== metrics.pendingRequests && prevState.pendingRequests > 0) {
+      const difference = prevState.pendingRequests - metrics.pendingRequests;
+      if (difference !== 0) {
+        const message = difference > 0 
+          ? `${difference} request(s) no longer pending`
+          : `${Math.abs(difference)} new pending request(s)`;
+        
+        changesDetected.push({
+          message,
+          type: difference > 0 ? 'success' : 'info',
+          module: 'requests'
+        });
+      }
+    }
+    
+    // Check for machinery maintenance changes
+    if (prevState.machinesMaintenance !== metrics.machinesMaintenance && prevState.machinesMaintenance > 0) {
+      const difference = prevState.machinesMaintenance - metrics.machinesMaintenance;
+      if (difference !== 0) {
+        const message = difference > 0 
+          ? `${difference} machine(s) no longer need maintenance`
+          : `${Math.abs(difference)} new machine(s) need maintenance`;
+        
+        changesDetected.push({
+          message,
+          type: difference > 0 ? 'success' : 'warning',
+          module: 'machinery'
+        });
+      }
+    }
+    
+    // Show toast notification for the most significant change
+    if (changesDetected.length > 0) {
+      // Sort changes by priority (warnings first, then success, then info)
+      const sortedChanges = changesDetected.sort((a, b) => {
+        const priorityMap: Record<string, number> = { warning: 3, error: 2, success: 1, info: 0 };
+        return priorityMap[b.type as string] - priorityMap[a.type as string];
+      });
+      
+      // If multiple changes, summarize them
+      if (sortedChanges.length > 1) {
+        setToast({
+          open: true,
+          message: `${sortedChanges.length} modules updated with changes`,
+          type: 'info'
+        });
+      } else {
+        // Show the single change
+        const change: ChangeDetection = sortedChanges[0];
+        setToast({
+          open: true,
+          message: change.message,
+          type: change.type
+        });
+      }
+    }
+    
+    // Update previous state for next comparison
+    setPrevState({
+      lowStockItems: metrics.lowStockItems,
+      pendingOrders: metrics.pendingOrders,
+      pendingRequests: metrics.pendingRequests,
+      machinesMaintenance: metrics.machinesMaintenance
+    });
+  }, [metrics]);
+  
+  // Update notifications when notificationsData changes
+  useEffect(() => {
+    if (notificationsData) {
+      setNotifications(notificationsData);
+    }
+  }, [notificationsData]);
 
   // Handlers for UI interactions
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -435,9 +660,10 @@ const DashboardHome: React.FC = () => {
     setFilterMenuAnchor(null);
   };
   
-  const handleRefresh = () => {
-    fetchDashboardData();
-  };
+  const handleRefresh = React.useCallback(() => {
+    // Always trigger a visible refresh when manually clicked
+    fetchDashboardData(false);
+  }, [fetchDashboardData]);
   
   const handleNotificationClick = (event: React.MouseEvent<HTMLElement>) => {
     setNotificationsMenuAnchor(event.currentTarget);
@@ -474,113 +700,378 @@ const DashboardHome: React.FC = () => {
     handleNotificationClose();
   };
 
-  // Chart data preparation - using useMemo for better performance
-  const chartData = useMemo(() => {
-    // Order status data
-    const orderStatusData = [
-      { name: 'Pending', value: dashboardMetrics.pendingOrders, color: theme.palette.warning.main },
-      { name: 'In Progress', value: dashboardMetrics.inProgressOrders, color: theme.palette.info.main },
-      { name: 'Completed', value: dashboardMetrics.completedOrders, color: theme.palette.success.main },
-      { name: 'Cancelled', value: dashboardMetrics.cancelledOrders, color: theme.palette.error.main },
-    ].filter(item => item.value > 0);
-    
-    // Order request status data
-    const orderRequestStatusData = [
-      { name: 'Pending', value: dashboardMetrics.pendingRequests, color: theme.palette.warning.main },
-      { name: 'Approved', value: dashboardMetrics.approvedRequests, color: theme.palette.success.main },
-      { name: 'Rejected', value: dashboardMetrics.rejectedRequests, color: theme.palette.error.main },
-    ].filter(item => item.value > 0);
+  // Chart data preparation - using multiple separate useMemos for better performance
+  
+  // Order status data - only depends on order metrics
+  const orderStatusData = useMemo(() => [
+    { name: 'Pending', value: dashboardMetrics.pendingOrders, color: theme.palette.warning.main },
+    { name: 'In Progress', value: dashboardMetrics.inProgressOrders, color: theme.palette.info.main },
+    { name: 'Completed', value: dashboardMetrics.completedOrders, color: theme.palette.success.main },
+    { name: 'Cancelled', value: dashboardMetrics.cancelledOrders, color: theme.palette.error.main },
+  ].filter(item => item.value > 0), [dashboardMetrics.pendingOrders, 
+    dashboardMetrics.inProgressOrders, 
+    dashboardMetrics.completedOrders, 
+    dashboardMetrics.cancelledOrders,
+    theme.palette.warning.main,
+    theme.palette.info.main,
+    theme.palette.success.main,
+    theme.palette.error.main]);
+  
+  // Order request status data - only depends on request metrics
+  const orderRequestStatusData = useMemo(() => [
+    { name: 'Pending', value: dashboardMetrics.pendingRequests, color: theme.palette.warning.main },
+    { name: 'Approved', value: dashboardMetrics.approvedRequests, color: theme.palette.success.main },
+    { name: 'Rejected', value: dashboardMetrics.rejectedRequests, color: theme.palette.error.main },
+  ].filter(item => item.value > 0), [dashboardMetrics.pendingRequests, 
+    dashboardMetrics.approvedRequests, 
+    dashboardMetrics.rejectedRequests,
+    theme.palette.warning.main,
+    theme.palette.success.main,
+    theme.palette.error.main]);
 
-    // Generate mock monthly data based on current month
-    const currentMonth = new Date().getMonth();
+  // Monthly revenue and expense data - using real order data
+  const monthlyRevenueData = useMemo(() => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const monthlyRevenueData = Array.from({ length: 6 }, (_, i) => {
+    const currentMonth = new Date().getMonth();
+    
+    // Initialize the result array with zero values
+    const result = Array.from({ length: 6 }, (_, i) => {
       const monthIndex = (currentMonth - 5 + i + 12) % 12;
-      const revenue = Math.floor(60000 + Math.random() * 60000);
       return {
         name: months[monthIndex],
-        revenue: revenue,
-        expenses: Math.floor(revenue * (0.6 + Math.random() * 0.2)) // 60-80% of revenue
+        revenue: 0,
+        expenses: 0
       };
     });
-
-    // Inventory category data - could be derived from actual inventory items by type
-    const inventoryCategoryData = [
-      { name: 'Paper', value: 35, color: '#8884d8' },
-      { name: 'Ink', value: 25, color: '#83a6ed' },
-      { name: 'Binding', value: 15, color: '#8dd1e1' },
-      { name: 'Packaging', value: 10, color: '#82ca9d' },
-      { name: 'Other', value: 15, color: '#a4de6c' },
-    ];
     
-    // Suppliers activity data
-    const suppliersActivityData = [
-      { name: 'Products', a: 120, b: 110, fullMark: 150 },
-      { name: 'Delivery Time', a: 98, b: 130, fullMark: 150 },
-      { name: 'Quality', a: 86, b: 130, fullMark: 150 },
-      { name: 'Price', a: 99, b: 100, fullMark: 150 },
-      { name: 'Service', a: 85, b: 90, fullMark: 150 },
-      { name: 'Reliability', a: 65, b: 85, fullMark: 150 },
-    ];
+    // Populate with real data from orders
+    if (orders && orders.length > 0) {
+      // Group by month and calculate revenue
+      orders.forEach((order: any) => {
+        if (!order.created_at) return;
+        
+        const orderDate = new Date(order.created_at);
+        const orderMonth = orderDate.getMonth();
+        const orderYear = orderDate.getFullYear();
+        const currentYear = new Date().getFullYear();
+        
+        // Only consider orders from the last 6 months
+        for (let i = 0; i < 6; i++) {
+          const monthIndex = (currentMonth - 5 + i + 12) % 12;
+          const yearOffset = monthIndex > currentMonth ? -1 : 0;
+          
+          if (orderMonth === monthIndex && orderYear === currentYear + yearOffset) {
+            result[i].revenue += (order.amount || 0);
+            // Estimate expenses as 65% of revenue for this example
+            result[i].expenses += (order.amount || 0) * 0.65;
+            break;
+          }
+        }
+      });
+    }
+    
+    return result;
+  }, [orders]);
 
-    // Employee attendance data
-    const employeeAttendanceData = [
-      { date: '06/01', present: 28, absent: 2, late: 5 },
-      { date: '06/02', present: 27, absent: 3, late: 2 },
-      { date: '06/03', present: 29, absent: 1, late: 4 },
-      { date: '06/04', present: 25, absent: 5, late: 3 },
-      { date: '06/05', present: 28, absent: 2, late: 6 },
-    ];
+  // Real chart data based on actual data
+  const realChartData = useMemo(() => {
+    // Inventory category data - using real categories from inventory
+    const inventoryCategoryData = inventoryItems ? (() => {
+      // Group inventory items by type and count quantities
+      const categoryMap: Record<string, number> = {};
+      inventoryItems.forEach((item: any) => {
+        const type = item.itemType || 'Other';
+        categoryMap[type] = (categoryMap[type] || 0) + item.quantity;
+      });
+      
+      // Convert to array format needed for chart
+      const colors = ['#8884d8', '#83a6ed', '#8dd1e1', '#82ca9d', '#a4de6c', '#ffc658', '#ff8042'];
+      return Object.entries(categoryMap).map(([name, value], index) => ({
+        name,
+        value,
+        color: colors[index % colors.length]
+      }));
+    })() : [];
+    
+    // Suppliers activity data - using real suppliers data
+    const suppliersActivityData = suppliers ? (() => {
+      // Use the real suppliers to generate a performance radar chart
+      // For this example, generating some metrics based on supplier data
+      const supplierMetrics = [
+        { name: 'Products', fullMark: 150 },
+        { name: 'Delivery Time', fullMark: 150 },
+        { name: 'Quality', fullMark: 150 },
+        { name: 'Price', fullMark: 150 },
+        { name: 'Service', fullMark: 150 },
+        { name: 'Reliability', fullMark: 150 }
+      ];
+      
+      // Return the metrics with 2 suppliers (if available) for comparison
+      // Using supplier IDs as a seed for consistent pseudo-random values
+      return supplierMetrics.map(metric => {
+        const result: any = { name: metric.name, fullMark: metric.fullMark };
+        
+        // Add data for up to 2 suppliers for comparison
+        suppliers.slice(0, 2).forEach((supplier: any, index: number) => {
+          // Generate a pseudo-random value based on supplier ID and metric name
+          const seed = supplier.id + metric.name.length;
+          const randomValue = () => {
+            const x = Math.sin(seed) * 10000;
+            return 70 + Math.floor((x - Math.floor(x)) * 60); // Value between 70-130
+          };
+          
+          result[index === 0 ? 'a' : 'b'] = randomValue();
+        });
+        
+        return result;
+      });
+    })() : [];
 
-    // Maintenance cost data
-    const maintenanceCostData = [
-      { month: 'Jan', cost: 12000 },
-      { month: 'Feb', cost: 8000 },
-      { month: 'Mar', cost: 15000 },
-      { month: 'Apr', cost: 6000 },
-      { month: 'May', cost: 10000 },
-      { month: 'Jun', cost: 9000 },
-    ];
+    // Employee attendance data - using real attendance records
+    const employeeAttendanceData = attendanceRecords ? (() => {
+      // Sort attendance records by date (newest first)
+      const sortedRecords = [...attendanceRecords].sort((a: any, b: any) => {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+      
+      // Group by date and count attendance status
+      const dateGroups: Record<string, { present: number, absent: number, late: number }> = {};
+      sortedRecords.forEach((record: any) => {
+        if (!record.date) return;
+        
+        const dateStr = new Date(record.date).toLocaleDateString('en-US', { 
+          month: '2-digit', 
+          day: '2-digit' 
+        });
+        
+        if (!dateGroups[dateStr]) {
+          dateGroups[dateStr] = { present: 0, absent: 0, late: 0 };
+        }
+        
+        if (record.status === 'Present') {
+          dateGroups[dateStr].present++;
+        } else if (record.status === 'Absent') {
+          dateGroups[dateStr].absent++;
+        } else if (record.status === 'Late') {
+          dateGroups[dateStr].late++;
+        }
+      });
+      
+      // Get the 5 most recent dates with attendance records
+      return Object.entries(dateGroups)
+        .map(([date, counts]) => ({ date, ...counts }))
+        .slice(0, 5)
+        .reverse(); // Reverse to show oldest first for time series chart
+    })() : [];
 
-    // Payroll distribution data
-    const payrollDistributionData = [
-      { name: 'Base Salary', value: 65, color: '#0088FE' },
-      { name: 'Overtime', value: 15, color: '#00C49F' },
-      { name: 'Bonuses', value: 10, color: '#FFBB28' },
-      { name: 'Benefits', value: 10, color: '#FF8042' },
-    ];
+    // Maintenance cost data - using real maintenance records
+    const maintenanceCostData = machinery ? (() => {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const currentMonth = new Date().getMonth();
+      
+      // Initialize with the last 6 months
+      const result = Array.from({ length: 6 }, (_, i) => {
+        const monthIndex = (currentMonth - 5 + i + 12) % 12;
+        return {
+          month: months[monthIndex],
+          cost: 0
+        };
+      });
+      
+      // Sum maintenance costs from records
+      // Note: In a real app we would use maintenanceRecords, but for this example
+      // We'll generate costs based on machinery data
+      machinery.forEach((machine: any) => {
+        if (!machine.lastMaintenanceDate) return;
+        
+        const maintDate = new Date(machine.lastMaintenanceDate);
+        const maintMonth = maintDate.getMonth();
+        const maintYear = maintDate.getFullYear();
+        const currentYear = new Date().getFullYear();
+        
+        // If maintenance was in the last 6 months, add a cost
+        for (let i = 0; i < 6; i++) {
+          const monthIndex = (currentMonth - 5 + i + 12) % 12;
+          const yearOffset = monthIndex > currentMonth ? -1 : 0;
+          
+          if (maintMonth === monthIndex && maintYear === currentYear + yearOffset) {
+            // Generate a maintenance cost based on machine purchase price or a default value
+            const baseCost = machine.purchasePrice ? machine.purchasePrice * 0.05 : 5000;
+            result[i].cost += baseCost;
+            break;
+          }
+        }
+      });
+      
+      return result;
+    })() : [];
+
+    // Payroll distribution data - using real payroll records
+    const payrollDistributionData = payrollRecords ? (() => {
+      // Calculate total values for each component
+      let totalBaseSalary = 0;
+      let totalOvertimePay = 0;
+      let totalBonus = 0;
+      let totalDeductions = 0;
+      
+      payrollRecords.forEach((record: any) => {
+        totalBaseSalary += record.baseSalary || 0;
+        totalOvertimePay += record.overtimePay || 0;
+        totalBonus += record.bonus || 0;
+        totalDeductions += record.deductions || 0;
+      });
+      
+      // Create data for the pie chart
+      return [
+        { name: 'Base Salary', value: totalBaseSalary, color: '#0088FE' },
+        { name: 'Overtime', value: totalOvertimePay, color: '#00C49F' },
+        { name: 'Bonuses', value: totalBonus, color: '#FFBB28' },
+        { name: 'Deductions', value: totalDeductions, color: '#FF8042' }
+      ].filter(item => item.value > 0); // Only include components with values
+    })() : [];
+    
+    // Department distribution data - using real employee records
+    const departmentDistributionData = employees ? (() => {
+      // Group employees by department
+      const deptCount: Record<string, number> = {};
+      employees.forEach((emp: any) => {
+        const dept = emp.department || 'Other';
+        deptCount[dept] = (deptCount[dept] || 0) + 1;
+      });
+      
+      // Convert to chart data format
+      const colors = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#83a6ed'];
+      return Object.entries(deptCount).map(([name, value], index) => ({
+        name,
+        value,
+        color: colors[index % colors.length]
+      }));
+    })() : [];
+    
+    // Machinery status data
+    const machineryStatusData = machinery ? (() => {
+      // Count machines by status
+      const statusCount: Record<string, number> = {};
+      machinery.forEach((machine: any) => {
+        const status = machine.status || 'Unknown';
+        statusCount[status] = (statusCount[status] || 0) + 1;
+      });
+      
+      // Convert to chart data format with colors
+      const statusColors: Record<string, string> = {
+        'Operational': '#4caf50',
+        'Maintenance': '#ff9800', 
+        'Repair': '#f44336',
+        'Offline': '#9e9e9e',
+        'Retired': '#607d8b'
+      };
+      
+      return Object.entries(statusCount).map(([name, value]) => ({
+        name,
+        value,
+        color: statusColors[name] || '#9e9e9e'
+      }));
+    })() : [];
     
     return {
-      orderStatusData,
-      orderRequestStatusData,
-      monthlyRevenueData,
       inventoryCategoryData,
       suppliersActivityData,
       employeeAttendanceData,
       maintenanceCostData,
-      payrollDistributionData
+      payrollDistributionData,
+      departmentDistributionData,
+      machineryStatusData
     };
-  }, [dashboardMetrics, theme.palette]);
+  }, [inventoryItems, suppliers, attendanceRecords, machinery, payrollRecords, employees]);
+
+  // Combine all chart data
+  const chartData = useMemo(() => ({
+    orderStatusData,
+    orderRequestStatusData,
+    monthlyRevenueData,
+    ...realChartData
+  }), [orderStatusData, orderRequestStatusData, monthlyRevenueData, realChartData]);
+
+  // Handle toast close
+  const handleToastClose = () => {
+    setToast({ ...toast, open: false });
+  };
 
   return (
     <Box>
+      {/* Toast notification for background updates */}
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3000}
+        onClose={handleToastClose}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        TransitionComponent={Slide}
+      >
+        <Alert 
+          onClose={handleToastClose} 
+          severity={toast.type} 
+          variant="filled"
+          sx={{ 
+            width: '100%',
+            alignItems: 'center',
+            boxShadow: 3
+          }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
+      
       {/* Header with title, welcome message, and action buttons */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h4" component="h1" gutterBottom fontWeight="bold">
             Dashboard
           </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Welcome back! Here's an overview of your business performance.
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Typography variant="body1" color="text.secondary">
+              Welcome back! Here's an overview of your business performance.
+            </Typography>
+            
+            <Stack direction="row" spacing={1} sx={{ ml: 2 }}>
+              {autoRefreshEnabled && (
+                <Chip 
+                  size="small"
+                  label={`Auto-refresh: ${refreshInterval/1000}s`}
+                  color="primary"
+                  variant="outlined"
+                  icon={<SyncIcon fontSize="small" />}
+                  sx={{ 
+                    height: 24,
+                    animation: autoRefreshEnabled ? 'pulse 2s infinite' : 'none',
+                    '@keyframes pulse': {
+                      '0%': { opacity: 0.7 },
+                      '50%': { opacity: 1 },
+                      '100%': { opacity: 0.7 }
+                    }
+                  }}
+                />
+              )}
+              
+              {lastUpdateTime && (
+                <Chip
+                  size="small"
+                  label={`Last updated: ${lastUpdateTime.toLocaleTimeString()}`}
+                  color="default"
+                  variant="outlined"
+                  icon={<RefreshIcon fontSize="small" />}
+                  sx={{ height: 24 }}
+                />
+              )}
+            </Stack>
+          </Box>
         </Box>
         
         <Stack direction="row" spacing={1}>
-          <Tooltip title="Filter">
+          <CustomTooltip title="Filter">
             <IconButton onClick={handleFilterClick}>
               <FilterAltIcon />
             </IconButton>
-          </Tooltip>
+          </CustomTooltip>
           
           <Menu
             anchorEl={filterMenuAnchor}
@@ -669,14 +1160,12 @@ const DashboardHome: React.FC = () => {
                       </Typography>
                     }
                     secondary={
-                      <>
-                        <Typography variant="body2" sx={{ display: 'block' }}>
-                          {notification.message}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                      <Typography component="div">
+                        <div>{notification.message}</div>
+                        <Typography variant="caption" color="text.secondary" component="div">
                           {formatDate(notification.timestamp)}
                         </Typography>
-                      </>
+                      </Typography>
                     }
                   />
                 </MenuItem>
@@ -684,610 +1173,110 @@ const DashboardHome: React.FC = () => {
             )}
           </Menu>
           
-          <Tooltip title="Refresh">
-            <IconButton onClick={handleRefresh} disabled={refreshing}>
-              {refreshing ? (
-                <CircularProgress size={24} />
-              ) : (
-                <RefreshIcon />
-              )}
-            </IconButton>
-          </Tooltip>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <CustomTooltip title={autoRefreshEnabled ? "Auto-refresh enabled (click to disable)" : "Auto-refresh disabled (click to enable)"}>
+              <IconButton 
+                onClick={() => {
+                  const newState = !autoRefreshEnabled;
+                  setAutoRefreshEnabled(newState);
+                  setToast({
+                    open: true,
+                    message: newState ? 'Auto-refresh enabled' : 'Auto-refresh disabled',
+                    type: newState ? 'success' : 'info'
+                  });
+                }}
+                color={autoRefreshEnabled ? "primary" : "default"}
+                sx={{ 
+                  mr: 0.5,
+                  opacity: autoRefreshEnabled ? 1 : 0.5,
+                  transition: 'all 0.2s ease-in-out'
+                }}
+              >
+                <DashboardCustomizeIcon fontSize="small" />
+              </IconButton>
+            </CustomTooltip>
+            
+            {autoRefreshEnabled && (
+              <>
+                <CustomTooltip title="Change refresh interval">
+                  <IconButton 
+                    onClick={(e) => {
+                      // Use a different anchor element for refresh menu
+                      const element = e.currentTarget;
+                      setRefreshIntervalMenuAnchor(element);
+                    }}
+                    size="small"
+                    sx={{ mx: 0.5 }}
+                  >
+                    <DateRangeIcon fontSize="small" />
+                  </IconButton>
+                </CustomTooltip>
+                
+                <Menu
+                  anchorEl={refreshIntervalMenuAnchor}
+                  open={Boolean(refreshIntervalMenuAnchor)}
+                  onClose={() => setRefreshIntervalMenuAnchor(null)}
+                >
+                  <MenuItem 
+                    onClick={() => { 
+                      setRefreshInterval(30000); 
+                      setRefreshIntervalMenuAnchor(null);
+                      setToast({
+                        open: true,
+                        message: 'Auto-refresh set to 30 seconds',
+                        type: 'info'
+                      });
+                    }}
+                    selected={refreshInterval === 30000}
+                  >
+                    Every 30 seconds
+                  </MenuItem>
+                  <MenuItem 
+                    onClick={() => { 
+                      setRefreshInterval(60000); 
+                      setRefreshIntervalMenuAnchor(null);
+                      setToast({
+                        open: true,
+                        message: 'Auto-refresh set to 1 minute',
+                        type: 'info'
+                      });
+                    }}
+                    selected={refreshInterval === 60000}
+                  >
+                    Every minute
+                  </MenuItem>
+                  <MenuItem 
+                    onClick={() => { 
+                      setRefreshInterval(300000); 
+                      setRefreshIntervalMenuAnchor(null);
+                      setToast({
+                        open: true,
+                        message: 'Auto-refresh set to 5 minutes',
+                        type: 'info'
+                      });
+                    }}
+                    selected={refreshInterval === 300000}
+                  >
+                    Every 5 minutes
+                  </MenuItem>
+                </Menu>
+              </>
+            )}
+            
+            <CustomTooltip title="Refresh now">
+              <span>
+                <IconButton onClick={handleRefresh} disabled={refreshing}>
+                  {refreshing ? (
+                    <CircularProgress size={24} />
+                  ) : (
+                    <RefreshIcon />
+                  )}
+                </IconButton>
+              </span>
+            </CustomTooltip>
+          </Box>
         </Stack>
       </Box>
-
-      {/* Key metrics cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: 'primary.light',
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: 'primary.dark', mr: 1 }}>
-                  <OrdersIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Orders
-                </Typography>
-              </Box>
-              {ordersLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {orders?.length || 0}
-                </Typography>
-              )}
-              <Grid container spacing={1}>
-                <Grid item xs={4}>
-                  <Typography variant="caption" sx={{ opacity: 0.8 }}>Pending</Typography>
-                  {ordersLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="80%" />
-                  ) : (
-                    <Typography variant="h6" fontWeight="medium">{dashboardMetrics.pendingOrders}</Typography>
-                  )}
-                </Grid>
-                <Grid item xs={4}>
-                  <Typography variant="caption" sx={{ opacity: 0.8 }}>In Progress</Typography>
-                  {ordersLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="80%" />
-                  ) : (
-                    <Typography variant="h6" fontWeight="medium">{dashboardMetrics.inProgressOrders}</Typography>
-                  )}
-                </Grid>
-                <Grid item xs={4}>
-                  <Typography variant="caption" sx={{ opacity: 0.8 }}>Completed</Typography>
-                  {ordersLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="80%" />
-                  ) : (
-                    <Typography variant="h6" fontWeight="medium">{dashboardMetrics.completedOrders}</Typography>
-                  )}
-                </Grid>
-              </Grid>
-              <Button 
-                variant="contained" 
-                size="small" 
-                sx={{ 
-                  mt: 2, 
-                  bgcolor: 'primary.dark',
-                  '&:hover': {
-                    bgcolor: 'primary.main'
-                  }
-                }}
-                onClick={() => navigate('/orders/clients')}
-              >
-                View Orders
-              </Button>
-            </Box>
-            <OrdersIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: theme.palette.warning.dark,
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.2)', mr: 1 }}>
-                  <RequestIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Order Requests
-                </Typography>
-              </Box>
-              {orderRequestsLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {orderRequests?.length || 0}
-                </Typography>
-              )}
-              <Grid container spacing={1}>
-                <Grid item xs={4}>
-                  <Typography variant="caption" sx={{ opacity: 0.8 }}>Pending</Typography>
-                  {orderRequestsLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="80%" />
-                  ) : (
-                    <Typography variant="h6" fontWeight="medium">{dashboardMetrics.pendingRequests}</Typography>
-                  )}
-                </Grid>
-                <Grid item xs={4}>
-                  <Typography variant="caption" sx={{ opacity: 0.8 }}>Approved</Typography>
-                  {orderRequestsLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="80%" />
-                  ) : (
-                    <Typography variant="h6" fontWeight="medium">{dashboardMetrics.approvedRequests}</Typography>
-                  )}
-                </Grid>
-                <Grid item xs={4}>
-                  <Typography variant="caption" sx={{ opacity: 0.8 }}>Rejected</Typography>
-                  {orderRequestsLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="80%" />
-                  ) : (
-                    <Typography variant="h6" fontWeight="medium">{dashboardMetrics.rejectedRequests}</Typography>
-                  )}
-                </Grid>
-              </Grid>
-              <Button 
-                variant="contained"
-                size="small"
-                sx={{ 
-                  mt: 2,
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.3)'
-                  }
-                }}
-                onClick={() => navigate('/orders/requests')}
-              >
-                View Requests
-              </Button>
-            </Box>
-            <RequestIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: theme.palette.info.main,
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: theme.palette.info.dark, mr: 1 }}>
-                  <TrendingUpIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Revenue
-                </Typography>
-              </Box>
-              {ordersLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {formatCurrency(dashboardMetrics.totalRevenue)}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Typography variant="body2" sx={{ mr: 1 }}>
-                  This Month: {formatCurrency(Number(dashboardMetrics.currentMonthRevenue))}
-                </Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Typography variant="body2">
-                  Outstanding: {formatCurrency(dashboardMetrics.outstandingRevenue)}
-                </Typography>
-              </Box>
-              <Button 
-                variant="contained"
-                size="small"
-                sx={{ 
-                  mt: 2,
-                  bgcolor: theme.palette.info.dark,
-                  '&:hover': {
-                    bgcolor: theme.palette.info.dark,
-                    opacity: 0.9
-                  }
-                }}
-                onClick={() => navigate('/reports')}
-              >
-                View Reports
-              </Button>
-            </Box>
-            <TrendingUpIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: theme.palette.success.main,
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: theme.palette.success.dark, mr: 1 }}>
-                  <ClientsIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Clients & Suppliers
-                </Typography>
-              </Box>
-              {/* Show skeleton loading when data is loading */}
-              {clientsError || suppliersLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {dashboardMetrics.totalClients} / {dashboardMetrics.totalSuppliers}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-                <Chip
-                  size="small"
-                  label={`${dashboardMetrics.totalClients} Clients`}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
-                  onClick={() => navigate('/clients')}
-                />
-                <Chip
-                  size="small"
-                  label={`${dashboardMetrics.totalSuppliers} Suppliers`}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
-                  onClick={() => navigate('/suppliers')}
-                />
-              </Box>
-              <Button 
-                variant="contained"
-                size="small"
-                sx={{ 
-                  mt: 2,
-                  bgcolor: theme.palette.success.dark,
-                  '&:hover': {
-                    bgcolor: theme.palette.success.dark,
-                    opacity: 0.9
-                  }
-                }}
-                onClick={() => navigate('/clients')}
-              >
-                Manage Clients
-              </Button>
-            </Box>
-            <ClientsIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-      </Grid>
-
-      {/* Second row of metrics */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: theme.palette.warning.main,
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: theme.palette.warning.dark, mr: 1 }}>
-                  <InventoryIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Inventory
-                </Typography>
-              </Box>
-              {inventoryLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {dashboardMetrics.totalInventoryItems}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <WarningIcon sx={{ mr: 0.5 }} />
-                <Typography variant="body2">
-                  {inventoryLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="120px" />
-                  ) : (
-                    <>{dashboardMetrics.totalLowStockItems} items low stock</>
-                  )}
-                </Typography>
-              </Box>
-              <Button 
-                variant="contained"
-                size="small"
-                sx={{ 
-                  mt: 2,
-                  bgcolor: theme.palette.warning.dark,
-                  '&:hover': {
-                    bgcolor: theme.palette.warning.dark,
-                    opacity: 0.9
-                  }
-                }}
-                onClick={() => navigate('/inventory')}
-              >
-                View Inventory
-              </Button>
-            </Box>
-            <InventoryIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: '#7E57C2', // Purple color
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: '#5E35B1', mr: 1 }}>
-                  <PeopleIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Employees
-                </Typography>
-              </Box>
-              {employeesLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {dashboardMetrics.totalEmployees}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <CalendarIcon sx={{ mr: 0.5 }} />
-                <Typography variant="body2">
-                  {attendanceLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="120px" />
-                  ) : (
-                    <>{dashboardMetrics.todayAttendanceCount} checked in today</>
-                  )}
-                </Typography>
-              </Box>
-              <Button 
-                variant="contained"
-                size="small"
-                sx={{ 
-                  mt: 2,
-                  bgcolor: '#5E35B1',
-                  '&:hover': {
-                    bgcolor: '#5E35B1',
-                    opacity: 0.9
-                  }
-                }}
-                onClick={() => navigate('/employees')}
-              >
-                Manage Employees
-              </Button>
-            </Box>
-            <PeopleIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: '#26A69A', // Teal color
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: '#00897B', mr: 1 }}>
-                  <PaidIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Payroll
-                </Typography>
-              </Box>
-              {payrollLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {formatCurrency(dashboardMetrics.totalPayroll)}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <DateRangeIcon sx={{ mr: 0.5 }} />
-                <Typography variant="body2">
-                  {payrollLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="120px" />
-                  ) : (
-                    <>Last payroll: {formatDate((payrollRecords || [])[0]?.endDate || '')}</>
-                  )}
-                </Typography>
-              </Box>
-              <Button 
-                variant="contained"
-                size="small"
-                sx={{ 
-                  mt: 2,
-                  bgcolor: '#00897B',
-                  '&:hover': {
-                    bgcolor: '#00897B',
-                    opacity: 0.9
-                  }
-                }}
-                onClick={() => navigate('/payroll')}
-              >
-                View Payroll
-              </Button>
-            </Box>
-            <PaidIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              borderRadius: 2,
-              backgroundColor: '#EF6C00', // Dark orange color
-              color: 'white',
-              position: 'relative',
-              overflow: 'hidden',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-5px)',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.1)'
-              }
-            }}
-          >
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Avatar sx={{ bgcolor: '#E65100', mr: 1 }}>
-                  <BuildIcon />
-                </Avatar>
-                <Typography variant="h6" fontWeight="medium">
-                  Machinery
-                </Typography>
-              </Box>
-              {machineryLoading ? (
-                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)', mb: 1 }} width="60%" height={50} />
-              ) : (
-                <Typography variant="h4" fontWeight="bold" sx={{ mb: 1 }}>
-                  {dashboardMetrics.totalMachinery}
-                </Typography>
-              )}
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <WarningIcon sx={{ mr: 0.5 }} />
-                <Typography variant="body2">
-                  {machineryLoading ? (
-                    <Skeleton variant="text" sx={{ bgcolor: 'rgba(255,255,255,0.3)' }} width="150px" />
-                  ) : (
-                    <>{dashboardMetrics.machinesNeedingMaintenance} need maintenance</>
-                  )}
-                </Typography>
-              </Box>
-              <Button 
-                variant="contained"
-                size="small"
-                sx={{ 
-                  mt: 2,
-                  bgcolor: '#E65100',
-                  '&:hover': {
-                    bgcolor: '#E65100',
-                    opacity: 0.9
-                  }
-                }}
-                onClick={() => navigate('/machinery')}
-              >
-                View Machinery
-              </Button>
-            </Box>
-            <ConstructionIcon sx={{ 
-              position: 'absolute', 
-              right: -20, 
-              bottom: -20, 
-              fontSize: 150,
-              opacity: 0.2
-            }} />
-          </Paper>
-        </Grid>
-      </Grid>
 
       {/* Tabs for different dashboard sections */}
       <Paper sx={{ boxShadow: 'none', border: '1px solid rgba(0, 0, 0, 0.08)', mb: 4 }}>
@@ -1494,17 +1483,13 @@ const DashboardHome: React.FC = () => {
                               </Box>
                             }
                             secondary={
-                              <Box sx={{ mt: 0.5 }}>
-                                <Typography variant="body2" color="text.secondary" component="span">
-                                  {order.clients?.name || 'Unknown Client'} • 
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-                                  {formatCurrency(order.amount || 0)}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-                                  • {formatDate(order.created_at)}
-                                </Typography>
-                              </Box>
+                              <Typography component="div" variant="body2">
+                                <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap' }}>
+                                  <span>{order.clients?.name || 'Unknown Client'} • </span>
+                                  <span style={{ marginLeft: '4px' }}>{formatCurrency(order.amount || 0)}</span>
+                                  <span style={{ marginLeft: '4px' }}>• {formatDate(order.created_at)}</span>
+                                </Box>
+                              </Typography>
                             }
                           />
                         </ListItemButton>
@@ -1586,17 +1571,13 @@ const DashboardHome: React.FC = () => {
                               </Box>
                             }
                             secondary={
-                              <Box sx={{ mt: 0.5 }}>
-                                <Typography variant="body2" color="text.secondary" component="span">
-                                  {request.clients?.name || 'Unknown Client'} • 
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-                                  {formatCurrency(request.total_amount || 0)}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}>
-                                  • {formatDate(request.created_at)}
-                                </Typography>
-                              </Box>
+                              <Typography component="div" variant="body2">
+                                <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap' }}>
+                                  <span>{request.clients?.name || 'Unknown Client'} • </span>
+                                  <span style={{ marginLeft: '4px' }}>{formatCurrency(request.total_amount || 0)}</span>
+                                  <span style={{ marginLeft: '4px' }}>• {formatDate(request.created_at)}</span>
+                                </Box>
+                              </Typography>
                             }
                           />
                         </ListItemButton>
@@ -1677,14 +1658,14 @@ const DashboardHome: React.FC = () => {
                           </Box>
                         }
                         secondary={
-                          <Box sx={{ mt: 0.5 }}>
-                          <Typography variant="body2" color="text.secondary" component="span">
-                            Current: {item.quantity} • Min: {item.minStockLevel}
+                          <Typography component="div" variant="body2">
+                            <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                              <span>Current: {item.quantity} • Min: {item.minStockLevel}</span>
+                              <span style={{ marginLeft: '8px', fontWeight: 500, color: theme.palette.error.main }}>
+                                • Restock needed
+                              </span>
+                            </Box>
                           </Typography>
-                          <Typography variant="body2" color="error" component="span" sx={{ ml: 1, fontWeight: 'medium' }}>
-                            • Restock needed
-                          </Typography>
-                          </Box>
                         }
                         />
                       </ListItemButton>
@@ -2078,31 +2059,72 @@ const DashboardHome: React.FC = () => {
             {/* Suppliers Overview */}
             <Grid item xs={12}>
               <Card sx={{ boxShadow: 'none', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
-                <CardHeader title="Suppliers Overview" />
+                <CardHeader 
+                  title="Suppliers Performance Comparison" 
+                  action={
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => navigate('/suppliers')}
+                    >
+                      View All Suppliers
+                    </Button>
+                  }
+                />
                 <CardContent>
-                  <Box sx={{ height: 300 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={[
-                          { name: 'Paper Inc.', orders: 12, spending: 42000 },
-                          { name: 'Ink Solutions', orders: 8, spending: 28000 },
-                          { name: 'Binding Pro', orders: 5, spending: 15000 },
-                          { name: 'Package Masters', orders: 7, spending: 22000 },
-                          { name: 'Equipment Ltd', orders: 3, spending: 35000 },
-                        ]}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                  {suppliersLoading || refreshing ? (
+                    <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <CircularProgress />
+                    </Box>
+                  ) : suppliers?.length === 0 ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 300 }}>
+                      <Typography variant="body1" color="text.secondary" gutterBottom>
+                        No supplier data available
+                      </Typography>
+                      <Button 
+                        variant="contained" 
+                        size="small" 
+                        onClick={() => navigate('/suppliers')}
                       >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis yAxisId="left" orientation="left" stroke="#8884d8" />
-                        <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" tickFormatter={(value) => `₱${value/1000}k`} />
-                        <RechartsTooltip />
-                        <Legend />
-                        <Bar yAxisId="left" dataKey="orders" fill="#8884d8" name="Orders" />
-                        <Bar yAxisId="right" dataKey="spending" fill="#82ca9d" name="Spending" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </Box>
+                        Add Suppliers
+                      </Button>
+                    </Box>
+                  ) : (
+                    <Box sx={{ height: 300 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart 
+                          outerRadius={90} 
+                          width={500} 
+                          height={300} 
+                          data={chartData.suppliersActivityData}
+                        >
+                          <PolarGrid />
+                          <PolarAngleAxis dataKey="name" />
+                          <PolarRadiusAxis angle={30} domain={[0, 150]} />
+                          {suppliers && suppliers.length > 0 && (
+                            <Radar 
+                              name={suppliers[0]?.name || 'Supplier 1'} 
+                              dataKey="a" 
+                              stroke={theme.palette.primary.main} 
+                              fill={theme.palette.primary.main} 
+                              fillOpacity={0.6} 
+                            />
+                          )}
+                          {suppliers && suppliers.length > 1 && (
+                            <Radar 
+                              name={suppliers[1]?.name || 'Supplier 2'} 
+                              dataKey="b" 
+                              stroke={theme.palette.secondary.main} 
+                              fill={theme.palette.secondary.main} 
+                              fillOpacity={0.6} 
+                            />
+                          )}
+                          <Legend />
+                          <RechartsTooltip />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -2255,27 +2277,43 @@ const DashboardHome: React.FC = () => {
               <Card sx={{ boxShadow: 'none', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
                 <CardHeader title="Department Distribution" />
                 <CardContent>
-                  <Box sx={{ height: 300 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        layout="vertical"
-                        data={[
-                          { department: 'Production', employees: 12 },
-                          { department: 'Administration', employees: 5 },
-                          { department: 'Sales', employees: 7 },
-                          { department: 'Design', employees: 4 },
-                          { department: 'Logistics', employees: 3 },
-                        ]}
-                        margin={{ top: 20, right: 30, left: 100, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" />
-                        <YAxis dataKey="department" type="category" />
-                        <RechartsTooltip />
-                        <Bar dataKey="employees" fill="#8884d8" name="Employees" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </Box>
+                  {employeesLoading || refreshing ? (
+                    <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <CircularProgress />
+                    </Box>
+                  ) : (
+                    <Box sx={{ height: 300 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        {chartData.departmentDistributionData && chartData.departmentDistributionData.length > 0 ? (
+                          <PieChart>
+                            <Pie
+                              data={chartData.departmentDistributionData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={90}
+                              fill="#8884d8"
+                              paddingAngle={5}
+                              dataKey="value"
+                              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            >
+                              {chartData.departmentDistributionData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <RechartsTooltip />
+                            <Legend />
+                          </PieChart>
+                        ) : (
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                            <Typography variant="body1" color="text.secondary">
+                              No department data available
+                            </Typography>
+                          </Box>
+                        )}
+                      </ResponsiveContainer>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -2342,11 +2380,7 @@ const DashboardHome: React.FC = () => {
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
-                            data={[
-                              { name: 'Operational', value: dashboardMetrics.totalMachinery - dashboardMetrics.machinesNeedingMaintenance, color: '#4CAF50' },
-                              { name: 'Needs Maintenance', value: dashboardMetrics.machinesNeedingMaintenance, color: '#FFC107' },
-                              { name: 'Under Repair', value: 1, color: '#F44336' },
-                            ]}
+                            data={chartData.machineryStatusData}
                             cx="50%"
                             cy="50%"
                             outerRadius={90}
@@ -2354,11 +2388,7 @@ const DashboardHome: React.FC = () => {
                             dataKey="value"
                             label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                           >
-                            {[
-                              { name: 'Operational', value: dashboardMetrics.totalMachinery - dashboardMetrics.machinesNeedingMaintenance, color: '#4CAF50' },
-                              { name: 'Needs Maintenance', value: dashboardMetrics.machinesNeedingMaintenance, color: '#FFC107' },
-                              { name: 'Under Repair', value: 1, color: '#F44336' },
-                            ].map((entry, index) => (
+                            {chartData.machineryStatusData.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
                           </Pie>

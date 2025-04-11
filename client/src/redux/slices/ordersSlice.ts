@@ -66,14 +66,8 @@ export const fetchOrders = createAsyncThunk(
   'orders/fetchOrders',
   async (_, { rejectWithValue }) => {
     try {
-      try {
-        const response = await apiClient.get('/orders');
-        return response.data.data;
-      } catch (apiError) {
-        console.log('API fetch failed, using client orders service');
-        const clientOrders = await clientOrdersService.getClientOrders();
-        return clientOrders.map(mapClientOrderToOrder);
-      }
+      const clientOrders = await clientOrdersService.getClientOrders();
+      return clientOrders.map(mapClientOrderToOrder);
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch orders');
     }
@@ -84,13 +78,8 @@ export const fetchOrderById = createAsyncThunk(
   'orders/fetchOrderById',
   async (id: string, { rejectWithValue }) => {
     try {
-      try {
-        const response = await apiClient.get(`/orders/${id}`);
-        return response.data.data;
-      } catch (apiError) {
-        const clientOrder = await clientOrdersService.getClientOrderById(parseInt(id));
-        return mapClientOrderToOrder(clientOrder);
-      }
+      const clientOrder = await clientOrdersService.getClientOrderById(parseInt(id));
+      return mapClientOrderToOrder(clientOrder);
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.error || 'Failed to fetch order');
     }
