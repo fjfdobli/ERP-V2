@@ -174,7 +174,7 @@ const DashboardLayout: React.FC = () => {
               color: 'white !important'
             }}
           >
-            Opzon's Printing
+            Opzon's Printers
           </Typography>
         </Box>
         {isSmallScreen && (
@@ -209,6 +209,7 @@ const DashboardLayout: React.FC = () => {
           }}
         >
           <Avatar 
+            src={user.avatarUrl}
             sx={{ 
               width: { xs: 56, md: 70 }, 
               height: { xs: 56, md: 70 }, 
@@ -222,7 +223,8 @@ const DashboardLayout: React.FC = () => {
                 : '0px 4px 10px rgba(0,0,0,0.15)',
               border: darkMode 
                 ? '2px solid rgba(255,255,255,0.1)'
-                : '2px solid white'
+                : '2px solid white',
+              objectFit: 'cover'
             }}
           >
             {getInitial(user.firstName) || getInitial(user.email)}
@@ -532,12 +534,14 @@ const DashboardLayout: React.FC = () => {
             endIcon={isXsScreen ? undefined : <KeyboardArrowDown />}
           >
             <Avatar 
+              src={user?.avatarUrl}
               sx={{ 
                 width: 32, 
                 height: 32, 
                 bgcolor: 'primary.main',
                 boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-                mr: isXsScreen ? 0 : 1.5
+                mr: isXsScreen ? 0 : 1.5,
+                objectFit: 'cover'
               }}
             >
               {getInitial(user?.firstName) || getInitial(user?.email)}

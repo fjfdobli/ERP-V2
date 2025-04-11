@@ -153,52 +153,75 @@ const ProfilePage: React.FC = () => {
     }
     
     const file = event.target.files[0];
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user?.id}-${Math.random()}.${fileExt}`;
-    const filePath = `avatars/${fileName}`;
+    if (file.size > 2 * 1024 * 1024) {
+      setUploadError('Image size exceeds 2MB limit. Please choose a smaller image.');
+      return;
+    }
     
     setUploadLoading(true);
     setUploadError(null);
     
     try {
-      // Upload the file to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('profiles')
-        .upload(filePath, file);
-        
-      if (uploadError) {
-        throw uploadError;
-      }
+      // Create a temporary URL for the selected image
+      const objectUrl = URL.createObjectURL(file);
       
-      // Get the public URL
-      const { data } = supabase.storage
-        .from('profiles')
-        .getPublicUrl(filePath);
-        
-      const avatarUrl = data.publicUrl;
+      // Instead of uploading to Supabase storage, just use a Base64 encoding
+      // This is a temporary solution until you set up proper storage permissions
+      const base64Image = await convertFileToBase64(file);
       
-      // Update user metadata
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: { avatarUrl }
+      // Update user metadata with the Base64 image
+      // NOTE: This is a temporary solution! In production, you should use proper storage
+      const { data: userData, error: updateError } = await supabase.auth.updateUser({
+        data: { 
+          avatarUrl: base64Image,
+          avatarLastUpdated: new Date().toISOString()
+        }
       });
       
       if (updateError) {
-        throw updateError;
+        console.error('User metadata update error:', updateError);
+        throw new Error(`Failed to update user profile: ${updateError.message}`);
       }
       
       // Update form data
       setFormData(prev => ({
         ...prev,
-        avatarUrl
+        avatarUrl: base64Image
       }));
       
       setSuccess(true);
+      
+      // Show help message about setting up storage properly
+      console.info(`
+        ADMIN SETUP REQUIRED: To use file storage properly, you need to:
+        1. Go to your Supabase dashboard at https://app.supabase.com
+        2. Select your project
+        3. Go to "Storage" in the sidebar
+        4. Create a bucket named "profiles"
+        5. Set up appropriate Row Level Security (RLS) policies for the bucket
+        
+        For testing, you can make the bucket public with this policy:
+        CREATE POLICY "Public Profiles Storage" 
+        ON storage.objects FOR ALL 
+        USING (bucket_id = 'profiles');
+      `);
+      
     } catch (error) {
-      console.error('Error uploading avatar:', error);
-      setUploadError('Failed to upload profile picture. Please try again.');
+      console.error('Error updating avatar:', error);
+      setUploadError(error instanceof Error ? error.message : 'Failed to update profile picture. Please try again.');
     } finally {
       setUploadLoading(false);
     }
+  };
+  
+  // Helper function to convert a file to Base64 string
+  const convertFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
   };
   
   // Trigger file input click when avatar edit button is clicked
@@ -339,7 +362,8 @@ const ProfilePage: React.FC = () => {
                     fontSize: '3rem',
                     fontWeight: 'bold',
                     border: '4px solid white',
-                    boxShadow: '0 4px 10px rgba(0,0,0,0.2)'
+                    boxShadow: '0 4px 10px rgba(0,0,0,0.2)',
+                    objectFit: 'cover'
                   }}
                 >
                   {getInitial(user?.firstName) || getInitial(user?.email)}
