@@ -10,7 +10,7 @@
     "@mui/x-charts": "^7.28.0",
     "@mui/x-date-pickers": "^7.28.0",
     "@reduxjs/toolkit": "^2.6.1",
-    "@supabase/supabase-js": "^2.49.1",
+    "@supabase/supabase-js": "^2.49.4",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
