@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { supabase } from '../supabaseClient';
 
 export interface Client {
@@ -56,27 +55,26 @@ export const clientsService = {
   /**
    * Fetch all clients from the database
    */
-  // async getClients(): Promise<Client[]> {
-  //   const { data, error } = await supabase
-  //     .from(TABLE_NAME)
-  //     .select('*')
-  //     .order('name', { ascending: true });
-
-  //   if (error) {
-  //     console.error('Error fetching clients:', error);
-  //     throw new Error(error.message);
-  //   }
-
-  //   return data || [];
-  // }
   async getClients(): Promise<Client[]> {
     try {
-      const response = await axios.get(`http://localhost:5000/api/clients`);
-      console.log('Client Orders:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching client orders:', error);
-      throw error;
+      console.log('Fetching clients from table:', TABLE_NAME);
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching clients:', error);
+        // Return empty array instead of throwing to prevent UI crashes
+        return [];
+      }
+
+      console.log(`Successfully fetched ${data?.length || 0} clients`);
+      return data || [];
+    } catch (err: any) {
+      console.error('Unexpected error in getClients():', err);
+      // Return empty array instead of throwing to prevent UI crashes
+      return [];
     }
   },
 

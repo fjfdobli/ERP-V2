@@ -199,41 +199,10 @@ export const getCurrentUser = createAsyncThunk(
   'auth/getCurrentUser',
   async (_, { rejectWithValue }) => {
     try {
-      // Try to get session first to ensure we have valid auth
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Session error in getCurrentUser:', sessionError);
-        localStorage.removeItem('token');
-        localStorage.removeItem('supabase_auth_token');
-        return rejectWithValue(sessionError.message || 'Session error');
-      }
-      
-      if (!sessionData.session) {
-        console.warn('No active session found in getCurrentUser');
-        
-        // Try refreshing the token
-        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-        
-        if (refreshError || !refreshData.session) {
-          console.error('Session refresh failed:', refreshError);
-          localStorage.removeItem('token');
-          localStorage.removeItem('supabase_auth_token');
-          return rejectWithValue(refreshError?.message || 'No active session');
-        }
-        
-        // Update tokens with refreshed session
-        localStorage.setItem('token', refreshData.session.access_token);
-        localStorage.setItem('supabase_auth_token', JSON.stringify(refreshData.session));
-      }
-      
-      // Now try to get the user
       const { data, error } = await supabase.auth.getUser();
       
       if (error || !data.user) {
-        console.error('User retrieval error:', error);
         localStorage.removeItem('token');
-        localStorage.removeItem('supabase_auth_token');
         return rejectWithValue(error?.message || 'User not authenticated');
       }
       
@@ -242,7 +211,6 @@ export const getCurrentUser = createAsyncThunk(
         return userProfile;
       } catch (profileError: any) {
         console.error('Profile error in getCurrentUser:', profileError);
-        // Return basic user info even if profile fetch fails
         return {
           id: 0,
           auth_id: data.user.id,
@@ -252,9 +220,7 @@ export const getCurrentUser = createAsyncThunk(
         };
       }
     } catch (error: any) {
-      console.error('Unexpected error in getCurrentUser:', error);
       localStorage.removeItem('token');
-      localStorage.removeItem('supabase_auth_token');
       return rejectWithValue(error.message || 'Failed to get user');
     }
   }
@@ -356,7 +322,6 @@ const authSlice = createSlice({
     logout: (state) => {
       supabase.auth.signOut();
       localStorage.removeItem('token');
-      localStorage.removeItem('supabase_auth_token');
       state.user = null;
       state.token = null;
       state.isAuthenticated = false;

@@ -208,27 +208,6 @@ const DashboardLayout: React.FC = () => {
             bgcolor: darkMode ? 'rgba(255, 255, 255, 0.03)' : 'rgba(25, 118, 210, 0.04)'
           }}
         >
-          <Avatar 
-            src={user.avatarUrl}
-            sx={{ 
-              width: { xs: 56, md: 70 }, 
-              height: { xs: 56, md: 70 }, 
-              mx: 'auto', 
-              bgcolor: 'var(--primary-color)',
-              color: 'white !important',
-              fontSize: { xs: '1.3rem', md: '1.6rem' },
-              fontWeight: 'bold',
-              boxShadow: darkMode 
-                ? '0px 4px 10px rgba(0,0,0,0.3)'
-                : '0px 4px 10px rgba(0,0,0,0.15)',
-              border: darkMode 
-                ? '2px solid rgba(255,255,255,0.1)'
-                : '2px solid white',
-              objectFit: 'cover'
-            }}
-          >
-            {getInitial(user.firstName) || getInitial(user.email)}
-          </Avatar>
           <Typography 
             variant="subtitle1" 
             sx={{ 
@@ -449,9 +428,7 @@ const DashboardLayout: React.FC = () => {
     if (location.pathname.includes('/orders/requests')) return 'Order Requests';
     if (location.pathname.includes('/orders/clients')) return 'Client Orders';
     if (location.pathname.includes('/orders/suppliers')) return 'Supplier Orders';
-    if (location.pathname.includes('/dashboard')) return 'Dashboard';
-    if (location.pathname.includes('/profile')) return 'My Profile';
-    if (location.pathname.includes('/settings')) return 'Settings';
+    if (location.pathname.includes('/dashboard')) return 'Dashboard'
     
     const pathSegments = location.pathname.split('/');
     const lastSegment = pathSegments[pathSegments.length - 1];
@@ -533,19 +510,6 @@ const DashboardLayout: React.FC = () => {
             }}
             endIcon={isXsScreen ? undefined : <KeyboardArrowDown />}
           >
-            <Avatar 
-              src={user?.avatarUrl}
-              sx={{ 
-                width: 32, 
-                height: 32, 
-                bgcolor: 'primary.main',
-                boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-                mr: isXsScreen ? 0 : 1.5,
-                objectFit: 'cover'
-              }}
-            >
-              {getInitial(user?.firstName) || getInitial(user?.email)}
-            </Avatar>
             {!isXsScreen && (
               <Box sx={{ textAlign: 'left' }}>
                 <Typography 
@@ -614,21 +578,6 @@ const DashboardLayout: React.FC = () => {
               </Typography>
             </Box>
             
-            <Divider />
-            
-            <MenuItem onClick={handleProfileClick} sx={{ py: 1.5 }}>
-              <ListItemIcon>
-                <AccountCircle fontSize="small" color="primary" />
-              </ListItemIcon>
-              <ListItemText primary="My Profile" />
-            </MenuItem>
-            <MenuItem onClick={handleSettingsClick} sx={{ py: 1.5 }}>
-              <ListItemIcon>
-                <Settings fontSize="small" color="primary" />
-              </ListItemIcon>
-              <ListItemText primary="Settings" />
-            </MenuItem>
-            <Divider />
             <MenuItem onClick={handleLogout} sx={{ py: 1.5 }}>
               <ListItemIcon>
                 <ExitToApp fontSize="small" color="error" />

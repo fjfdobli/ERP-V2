@@ -1,83 +1,228 @@
 import { createClient } from '@supabase/supabase-js';
 
+// Include the full URL with 'https://' protocol
 const supabaseUrl = 'https://iyjfpkcxwljfkxbjagbd.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5amZwa2N4d2xqZmt4YmphZ2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI2Njg5NzUsImV4cCI6MjA1ODI0NDk3NX0.0fJgoMe23ZPE1Rgz70RFwV31c3qRGnt1Cciz-x_F0io';
+
+// Testing connection on startup
+console.log(`Initializing Supabase client for: ${supabaseUrl}`);
+
+// Clear any potentially corrupted sessions
+if (typeof localStorage !== 'undefined') {
+  if (localStorage.getItem('supabase_auth_token') === '[object Object]') {
+    console.log('Found corrupted auth token, clearing it');
+    localStorage.removeItem('supabase_auth_token');
+    localStorage.removeItem('token');
+  }
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    flowType: 'pkce', // More secure auth flow
-    detectSessionInUrl: true, // Auto-detect auth redirects
-    storage: localStorage,
-    storageKey: 'opzons-auth-storage',
-    debug: false // Set to true if you want to debug auth issues
+    storageKey: 'supabase_auth_token',
+    detectSessionInUrl: true,
+    storage: {
+      getItem: (key) => {
+        try {
+          const storedValue = localStorage.getItem(key);
+          
+          // Handle corrupted storage
+          if (storedValue === '[object Object]') {
+            console.warn('Found corrupted storage value for key:', key);
+            localStorage.removeItem(key);
+            return null;
+          }
+          
+          // If token is in both formats, ensure they're in sync
+          if (key === 'supabase_auth_token' && !storedValue) {
+            const legacyToken = localStorage.getItem('token');
+            if (legacyToken) {
+              console.log('Using legacy token format');
+              try {
+                // Check if it's a raw token or JSON
+                if (legacyToken.startsWith('ey')) {
+                  // It's a JWT token, convert to session format
+                  const fakeSession = {
+                    access_token: legacyToken,
+                    token_type: 'bearer',
+                    expires_in: 3600,
+                    expires_at: Math.floor(Date.now() / 1000) + 3600,
+                    refresh_token: ''
+                  };
+                  const sessionValue = JSON.stringify(fakeSession);
+                  localStorage.setItem(key, sessionValue);
+                  return sessionValue;
+                } else if (legacyToken.startsWith('{')) {
+                  // It's already JSON
+                  localStorage.setItem(key, legacyToken);
+                  return legacyToken;
+                } else {
+                  // Unknown format, use as is but with warning
+                  console.warn('Unknown token format:', legacyToken.substring(0, 10) + '...');
+                  return null;
+                }
+              } catch (e) {
+                console.error('Error processing legacy token:', e);
+                return null;
+              }
+            }
+          }
+          
+          return storedValue;
+        } catch (error) {
+          console.error('Error in storage.getItem:', error);
+          return null;
+        }
+      },
+      setItem: (key, value) => {
+        try {
+          // Validate value before storing
+          if (value === '[object Object]' || value === undefined) {
+            console.warn('Preventing storage of invalid value for key:', key);
+            return;
+          }
+          
+          localStorage.setItem(key, value);
+          
+          // Keep 'token' in sync for backward compatibility
+          if (key === 'supabase_auth_token') {
+            try {
+              // Handle both plain tokens and JSON session objects
+              if (typeof value === 'string' && value.startsWith('{')) {
+                const session = JSON.parse(value);
+                const token = session?.access_token;
+                if (token) {
+                  console.log('Setting token in direct format');
+                  localStorage.setItem('token', token);
+                }
+              } else if (typeof value === 'string' && value.startsWith('ey')) {
+                // It's a direct JWT token
+                localStorage.setItem('token', value);
+              }
+            } catch (e) {
+              console.error('Error synchronizing token formats:', e);
+            }
+          }
+        } catch (error) {
+          console.error('Error in storage.setItem:', error);
+        }
+      },
+      removeItem: (key) => {
+        try {
+          localStorage.removeItem(key);
+          
+          // Also remove legacy token
+          if (key === 'supabase_auth_token') {
+            localStorage.removeItem('token');
+          }
+        } catch (error) {
+          console.error('Error in storage.removeItem:', error);
+        }
+      }
+    }
   },
-  // Removed custom headers that were causing CORS issues
   global: {
-    headers: { }
+    headers: {
+      'x-application-name': 'opzons-printing-press'
+    }
   },
   db: {
     schema: 'public'
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
   }
 });
 
-// Initialize and ensure the verification_codes table exists
-export const initializeAuthTables = async () => {
+// Log connection info but don't run test immediately
+// This avoids any "bad URL" errors during page load
+console.log('Supabase client configured and ready');
+
+// Delay connection test to avoid initial load issues
+setTimeout(async () => {
   try {
-    // Check if verification_codes table exists
-    const { error: queryError } = await supabase
-      .from('verification_codes')
-      .select('id')
-      .limit(1);
+    console.log('Testing Supabase connection to URL:', supabaseUrl);
     
-    // If there was an error, the table might not exist
-    if (queryError && queryError.message.includes('does not exist')) {
-      console.log('Creating verification_codes table...');
+    // Check for storage corruption first
+    if (localStorage.getItem('supabase_auth_token') === '[object Object]') {
+      console.warn('Found corrupted auth token during connection test, clearing it');
+      localStorage.removeItem('supabase_auth_token');
+      localStorage.removeItem('token');
+    }
+    
+    // Check authentication first
+    try {
+      const { data: authData, error: authError } = await supabase.auth.getSession();
       
-      // Create the verification_codes table
-      const createTableQuery = `
-        CREATE TABLE IF NOT EXISTS public.verification_codes (
-          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-          email VARCHAR,
-          phone VARCHAR,
-          code VARCHAR NOT NULL,
-          type VARCHAR NOT NULL,
-          used BOOLEAN DEFAULT FALSE,
-          created_at TIMESTAMP DEFAULT NOW(),
-          expires_at TIMESTAMP NOT NULL
-        );
-      `;
-      
-      // Try to execute the create table SQL (this requires PostgreSQL permissions)
-      const { error: createError } = await supabase.rpc('pg_query', { query: createTableQuery });
-      
-      if (createError) {
-        console.error('Error creating verification_codes table:', createError);
-        console.log('Please run the SQL script from server/supabase/migrations/verification_tables.sql in your Supabase dashboard SQL editor.');
+      if (authError) {
+        console.error('Auth check error during connection test:', authError);
+        // Don't try to use the session if there was an error
+      } else if (authData?.session) {
+        console.log('Active Supabase session found:', authData.session.user.email);
+        
+        // Store tokens in both formats for compatibility
+        localStorage.setItem('token', authData.session.access_token);
+        localStorage.setItem('supabase_auth_token', JSON.stringify(authData.session));
+        console.log('Session tokens refreshed from active session');
       } else {
-        console.log('Verification_codes table created successfully');
+        console.log('No active Supabase session, attempting to refresh...');
+        
+        // Check for existing token to refresh
+        const existingToken = localStorage.getItem('token');
+        if (existingToken) {
+          // Try to refresh the session
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            console.warn('Session refresh failed:', refreshError.message);
+            // Clear invalid tokens
+            localStorage.removeItem('token');
+            localStorage.removeItem('supabase_auth_token');
+          } else if (refreshData?.session) {
+            console.log('Session refreshed successfully');
+            
+            // Store refreshed tokens
+            localStorage.setItem('token', refreshData.session.access_token);
+            localStorage.setItem('supabase_auth_token', JSON.stringify(refreshData.session));
+          }
+        } else {
+          console.log('No token found for session refresh');
+        }
+      }
+    } catch (authError) {
+      console.error('Auth check error:', authError);
+    }
+    
+    // Test database connection regardless of authentication status
+    try {
+      console.log('Testing database access...');
+      const { error } = await supabase.from('clients').select('count');
+      
+      if (error) {
+        console.warn('Database access test failed:', error.message);
+        if (error.message.includes('JWT') || error.message.includes('token') || 
+            error.message.includes('auth') || error.message.includes('permission')) {
+          console.warn('Auth-related database access error, clearing tokens');
+          localStorage.removeItem('token');
+          localStorage.removeItem('supabase_auth_token');
+        }
+      } else {
+        console.log('Database access test successful');
+      }
+    } catch (dbError: any) {
+      console.warn('Database access test error:', dbError);
+      // If it's an auth-related error, clear tokens
+      if (dbError.message && (
+          dbError.message.includes('JWT') || 
+          dbError.message.includes('token') || 
+          dbError.message.includes('auth') || 
+          dbError.message.includes('permission'))) {
+        console.warn('Auth-related database error, clearing tokens');
+        localStorage.removeItem('token');
+        localStorage.removeItem('supabase_auth_token');
       }
     }
-    
-    return { success: true };
   } catch (error) {
-    console.error('Error initializing auth tables:', error);
-    return { success: false, error };
+    console.warn('Supabase connection check failed:', error);
   }
-};
-
-// Run the initialization (but don't wait for it to finish)
-initializeAuthTables().then(result => {
-  if (result.success) {
-    console.log('Auth tables initialized successfully');
-  }
-});
+}, 1000); // Reduced delay to 1 second for faster startup
 
 export const testTableAccess = async () => {
   try {
@@ -260,7 +405,6 @@ export const runMigrations = async () => {
       return { success: false, message: 'Failed to add updated_at column', error: snakeCaseError };
     }
     
-    // Create a trigger that updates both forms of the timestamp
     const triggerQuery = `
       CREATE OR REPLACE FUNCTION update_modified_column()
       RETURNS TRIGGER AS $$
@@ -295,10 +439,3 @@ export const runMigrations = async () => {
     return { success: false, message: 'Migration execution failed', error: err };
   }
 };
-
-// Migration disabled due to RPC errors
-// runMigrations().then(result => {
-//   console.log('Migration result:', result);
-// }).catch(err => {
-//   console.error('Migration error:', err);
-// });

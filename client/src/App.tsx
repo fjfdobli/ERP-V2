@@ -6,6 +6,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { store } from './redux/store';
 import { useAppDispatch, useAppSelector } from './redux/hooks';
 import { getCurrentUser } from './redux/slices/authSlice';
+import { supabase } from './supabaseClient';
 import defaultTheme from './theme';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -22,8 +23,6 @@ import SuppliersList from './pages/Suppliers';
 import Payroll from './pages/Payroll';
 import MachineryList from './pages/Machinery';
 import ReportsList from './pages/Reports';
-import ProfilePage from './pages/Profile';
-import SettingsPage from './pages/Settings';
 import NotFound from './pages/NotFound';
 import LoadingScreen from './components/common/LoadingScreen';
 import AttendanceList from './pages/Attendance';
@@ -32,28 +31,12 @@ interface ProtectedRouteProps {
   children: ReactNode;
 }
 
+// Use the ProtectedRoute from components/ProtectedRoute.tsx instead
+// This is just an import wrapper to avoid duplicating code
+import ProtectedRouteComponent from './components/ProtectedRoute';
+
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { isAuthenticated, loading } = useAppSelector(state => state.auth);
-  const dispatch = useAppDispatch();
-
-  useEffect(() => {
-    if (!isAuthenticated && !loading) {
-      const token = localStorage.getItem('token');
-      if (token) {
-        dispatch(getCurrentUser());
-      }
-    }
-  }, [dispatch, isAuthenticated, loading]);
-
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <>{children}</>;
+  return <ProtectedRouteComponent children={children} />;
 };
 
 // Create Theme Context
@@ -190,11 +173,85 @@ const AppInitializer: React.FC = () => {
 
   // Handle authentication
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      dispatch(getCurrentUser());
-    }
-  }, [dispatch]);
+    const checkAuth = async () => {
+      // Try to get session directly from Supabase first
+      try {
+        // Check for storage corruption first
+        if (localStorage.getItem('supabase_auth_token') === '[object Object]') {
+          console.warn('Found corrupted auth token in App.tsx, clearing it');
+          localStorage.removeItem('supabase_auth_token');
+          localStorage.removeItem('token');
+        }
+        
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('Session retrieval error:', sessionError);
+          if (!user) return; // Don't proceed if there's an error and we're not logged in
+        }
+        
+        if (sessionData?.session?.access_token) {
+          // Make sure token is in localStorage for API calls
+          localStorage.setItem('token', sessionData.session.access_token);
+          localStorage.setItem('supabase_auth_token', JSON.stringify(sessionData.session));
+          console.log('Valid session found in App.tsx, authenticating...');
+          
+          // If not already authenticated, get current user
+          if (!user) {
+            dispatch(getCurrentUser());
+          }
+        } else {
+          // Fallback to token if available
+          const token = localStorage.getItem('token');
+          const sessionStr = localStorage.getItem('supabase_auth_token');
+          
+          if (token && !user) {
+            console.log('Direct token found in App.tsx, authenticating...');
+            dispatch(getCurrentUser());
+          } else if (sessionStr && sessionStr !== '[object Object]' && !user) {
+            try {
+              const parsedSession = JSON.parse(sessionStr);
+              if (parsedSession?.access_token) {
+                console.log('Session token found in App.tsx, authenticating...');
+                localStorage.setItem('token', parsedSession.access_token);
+                dispatch(getCurrentUser());
+              }
+            } catch (e) {
+              console.error('Error parsing session in App.tsx:', e);
+              localStorage.removeItem('supabase_auth_token');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Auth session check error in App.tsx:', error);
+        // Don't attempt automatic authentication on error to prevent loops
+      }
+    };
+    
+    // Run auth check
+    checkAuth();
+    
+    // Listen for auth state changes from Supabase
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log('Auth state change:', event);
+        if (event === 'SIGNED_IN' && session) {
+          // Update local storage
+          localStorage.setItem('token', session.access_token);
+          localStorage.setItem('supabase_auth_token', JSON.stringify(session));
+          if (!user) dispatch(getCurrentUser());
+        } else if (event === 'SIGNED_OUT') {
+          // Clear tokens
+          localStorage.removeItem('token');
+          localStorage.removeItem('supabase_auth_token');
+        }
+      }
+    );
+    
+    return () => {
+      authListener?.subscription?.unsubscribe();
+    };
+  }, [dispatch, user]);
   
   // Apply user settings when user data is loaded
   useEffect(() => {
@@ -232,8 +289,6 @@ const AppContent: React.FC = () => {
           <Route path="suppliers" element={<SuppliersList />} />
           <Route path="machinery" element={<MachineryList />} />
           <Route path="reports" element={<ReportsList />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="settings" element={<SettingsPage />} />
           <Route path="attendance" element={<AttendanceList />} />
         </Route>
 
