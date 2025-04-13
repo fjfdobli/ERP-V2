@@ -21,45 +21,33 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     const checkAuth = async () => {
       if (!isAuthenticated) {
         try {
-          // Check for session directly with Supabase first
+          // First, check for token directly since it's most reliable
+          const token = localStorage.getItem('token');
+          
+          if (token) {
+            console.log("Found direct token in ProtectedRoute, authenticating...");
+            try {
+              // Try authenticating with the token without any session check
+              await dispatch(getCurrentUser());
+              return; // If successful, exit early
+            } catch (tokenAuthError) {
+              console.error("Direct token auth failed:", tokenAuthError);
+              // Continue to check session if direct token auth failed
+            }
+          }
+          
+          // Check for session directly with Supabase as fallback
+          console.log("Checking Supabase session in ProtectedRoute...");
           const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
           
           if (sessionError) {
             console.error("Session retrieval error:", sessionError);
-            // Clear any existing tokens on session error
-            localStorage.removeItem('token');
-            localStorage.removeItem('supabase_auth_token');
-          }
-          else if (sessionData?.session?.access_token) {
-            console.log("Found Supabase session, authenticating...");
-            // Store token in both formats for compatibility
+          } else if (sessionData?.session?.access_token) {
+            console.log("Found Supabase session, storing and authenticating...");
             localStorage.setItem('token', sessionData.session.access_token);
-            localStorage.setItem('supabase_auth_token', JSON.stringify(sessionData.session));
             await dispatch(getCurrentUser());
           } else {
-            // Check for token directly
-            const token = localStorage.getItem('token');
-            const sessionJson = localStorage.getItem('supabase_auth_token');
-            
-            if (token) {
-              console.log("Found direct token, authenticating...");
-              await dispatch(getCurrentUser());
-            } else if (sessionJson && sessionJson !== '[object Object]') {
-              try {
-                // Try to parse the session and extract the token
-                const session = JSON.parse(sessionJson);
-                if (session?.access_token) {
-                  console.log("Found session token, authenticating...");
-                  localStorage.setItem('token', session.access_token);
-                  await dispatch(getCurrentUser());
-                }
-              } catch (parseError) {
-                console.error("Error parsing stored session:", parseError);
-                localStorage.removeItem('supabase_auth_token');
-              }
-            } else {
-              console.log("No valid authentication token found");
-            }
+            console.log("No active auth session found");
           }
         } catch (error) {
           console.error("Auth check failed:", error);
@@ -89,18 +77,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   if (authenticating || (loading && !initialChecked)) {
     return <LoadingScreen />;
   }
-
-  // Redirect to login if not authenticated after checks complete
-  if (!isAuthenticated) {
-    // Check if we've exceeded retry attempts before redirecting
-    if (authAttempts >= 3) {
-      console.log("Max auth attempts reached, redirecting to login");
-      localStorage.removeItem('token');
-      localStorage.removeItem('supabase_auth_token');
-    }
+  
+  // Only redirect to login if not authenticated AND we've tried multiple times
+  if (!isAuthenticated && authAttempts >= 3) {
+    console.log("Max auth attempts reached, redirecting to login");
     return <Navigate to="/login" replace />;
   }
-
+  
+  // Important: Even if not fully authenticated, render the children
+  // This prevents redirects when reloading the page
+  // The app will try to reauthenticate in the background
   return <>{children}</>;
 };
 

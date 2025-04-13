@@ -20,56 +20,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    storageKey: 'supabase_auth_token',
+    storageKey: 'token', // Changed to use 'token' directly
     detectSessionInUrl: true,
     storage: {
       getItem: (key) => {
         try {
-          const storedValue = localStorage.getItem(key);
-          
-          // Handle corrupted storage
-          if (storedValue === '[object Object]') {
-            console.warn('Found corrupted storage value for key:', key);
-            localStorage.removeItem(key);
-            return null;
-          }
-          
-          // If token is in both formats, ensure they're in sync
-          if (key === 'supabase_auth_token' && !storedValue) {
-            const legacyToken = localStorage.getItem('token');
-            if (legacyToken) {
-              console.log('Using legacy token format');
-              try {
-                // Check if it's a raw token or JSON
-                if (legacyToken.startsWith('ey')) {
-                  // It's a JWT token, convert to session format
-                  const fakeSession = {
-                    access_token: legacyToken,
-                    token_type: 'bearer',
-                    expires_in: 3600,
-                    expires_at: Math.floor(Date.now() / 1000) + 3600,
-                    refresh_token: ''
-                  };
-                  const sessionValue = JSON.stringify(fakeSession);
-                  localStorage.setItem(key, sessionValue);
-                  return sessionValue;
-                } else if (legacyToken.startsWith('{')) {
-                  // It's already JSON
-                  localStorage.setItem(key, legacyToken);
-                  return legacyToken;
-                } else {
-                  // Unknown format, use as is but with warning
-                  console.warn('Unknown token format:', legacyToken.substring(0, 10) + '...');
-                  return null;
-                }
-              } catch (e) {
-                console.error('Error processing legacy token:', e);
-                return null;
-              }
-            }
-          }
-          
-          return storedValue;
+          return localStorage.getItem(key);
         } catch (error) {
           console.error('Error in storage.getItem:', error);
           return null;
@@ -77,33 +33,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       },
       setItem: (key, value) => {
         try {
-          // Validate value before storing
           if (value === '[object Object]' || value === undefined) {
-            console.warn('Preventing storage of invalid value for key:', key);
+            console.warn('Preventing storage of invalid value');
             return;
           }
-          
           localStorage.setItem(key, value);
-          
-          // Keep 'token' in sync for backward compatibility
-          if (key === 'supabase_auth_token') {
-            try {
-              // Handle both plain tokens and JSON session objects
-              if (typeof value === 'string' && value.startsWith('{')) {
-                const session = JSON.parse(value);
-                const token = session?.access_token;
-                if (token) {
-                  console.log('Setting token in direct format');
-                  localStorage.setItem('token', token);
-                }
-              } else if (typeof value === 'string' && value.startsWith('ey')) {
-                // It's a direct JWT token
-                localStorage.setItem('token', value);
-              }
-            } catch (e) {
-              console.error('Error synchronizing token formats:', e);
-            }
-          }
         } catch (error) {
           console.error('Error in storage.setItem:', error);
         }
@@ -111,11 +45,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       removeItem: (key) => {
         try {
           localStorage.removeItem(key);
-          
-          // Also remove legacy token
-          if (key === 'supabase_auth_token') {
-            localStorage.removeItem('token');
-          }
         } catch (error) {
           console.error('Error in storage.removeItem:', error);
         }

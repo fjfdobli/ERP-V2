@@ -233,17 +233,44 @@ const AppInitializer: React.FC = () => {
     
     // Listen for auth state changes from Supabase
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
         console.log('Auth state change:', event);
         if (event === 'SIGNED_IN' && session) {
-          // Update local storage
+          console.log('Auth state change: SIGNED_IN - updating tokens and fetching user');
+          
+          // Update local storage with session tokens
           localStorage.setItem('token', session.access_token);
           localStorage.setItem('supabase_auth_token', JSON.stringify(session));
-          if (!user) dispatch(getCurrentUser());
+          
+          // Wait a moment for auth to fully propagate
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
+          // Get user data if not already authenticated
+          if (!user) {
+            console.log('No existing user data, fetching after sign in event');
+            dispatch(getCurrentUser());
+          }
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          console.log('Auth state change: TOKEN_REFRESHED - updating tokens');
+          
+          // Update local storage with refreshed tokens
+          localStorage.setItem('token', session.access_token);
+          localStorage.setItem('supabase_auth_token', JSON.stringify(session));
         } else if (event === 'SIGNED_OUT') {
+          console.log('Auth state change: SIGNED_OUT - clearing tokens');
+          
           // Clear tokens
           localStorage.removeItem('token');
           localStorage.removeItem('supabase_auth_token');
+        } else if (event === 'USER_UPDATED' && session) {
+          console.log('Auth state change: USER_UPDATED');
+          
+          // Update local storage with session tokens
+          localStorage.setItem('token', session.access_token);
+          localStorage.setItem('supabase_auth_token', JSON.stringify(session));
+          
+          // Refresh user data to reflect the changes
+          dispatch(getCurrentUser());
         }
       }
     );
