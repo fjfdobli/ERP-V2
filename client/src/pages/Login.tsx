@@ -67,16 +67,13 @@ const Login = () => {
   // Login states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
   // Verification states
-  const [loginMethod, setLoginMethod] = useState(0); // 0 for email, 1 for phone
   const [showVerification, setShowVerification] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [verificationError, setVerificationError] = useState('');
-  const [phoneError, setPhoneError] = useState('');
   
   // Forgot password states
   const [forgotPasswordDialog, setForgotPasswordDialog] = useState(false);
@@ -145,63 +142,19 @@ const Login = () => {
     checkExistingAuth();
   }, [dispatch]);
 
-  // Validate phone number (Philippines format)
-  const validatePhoneNumber = (phone: string) => {
-    // Basic Philippines phone number validation
-    // Formats: +639XX XXX XXXX or 09XX XXX XXXX
-    const regex = /^(\+?63|0)?[9]\d{9}$/;
-    const isValid = regex.test(phone.replace(/\s/g, ''));
-    
-    if (!isValid) {
-      setPhoneError('Please enter a valid Philippines phone number');
-      return false;
-    }
-    
-    setPhoneError('');
-    return true;
-  };
-
-  // Format phone number with +63 prefix if needed
-  const formatPhoneNumber = (phone: string) => {
-    const cleanedNumber = phone.replace(/\s/g, '').replace(/^0/, '');
-    
-    if (cleanedNumber.startsWith('9') && cleanedNumber.length === 10) {
-      return `+63${cleanedNumber}`;
-    } else if (cleanedNumber.startsWith('63') && cleanedNumber.length === 12) {
-      return `+${cleanedNumber}`;
-    } else if (cleanedNumber.startsWith('+63') && cleanedNumber.length === 13) {
-      return cleanedNumber;
-    }
-    
-    return phone;
-  };
-
-  // Handle phone number input change
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setPhoneNumber(value);
-    validatePhoneNumber(value);
-  };
-
-  // Handle login method change (email/phone)
-  const handleLoginMethodChange = (event: React.SyntheticEvent, newValue: number) => {
-    setLoginMethod(newValue);
-    setVerificationError('');
-  };
+  // No phone validation methods needed anymore
 
   // Handle initial login form submission
   const handleInitialSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    // Validate inputs based on login method
-    if (loginMethod === 0 && (!email || !email.includes('@'))) {
+    // Validate inputs
+    if (!email || !email.includes('@')) {
       setSnackbar({
         open: true,
         message: 'Please enter a valid email address',
         severity: 'error'
       });
-      return;
-    } else if (loginMethod === 1 && !validatePhoneNumber(phoneNumber)) {
       return;
     }
     
@@ -215,58 +168,19 @@ const Login = () => {
     }
     
     try {
-      // Attempt login based on the selected method
-      if (loginMethod === 0) {
-        // Email login
-        const resultAction = await dispatch(login({ email, password }));
+      // Attempt login with email and password
+      const resultAction = await dispatch(login({ email, password }));
+      
+      if (login.rejected.match(resultAction)) {
+        // Check if the error message suggests email verification is needed
+        const errorMsg = resultAction.payload as string;
         
-        if (login.rejected.match(resultAction)) {
-          // Check if the error message suggests email verification is needed
-          const errorMsg = resultAction.payload as string;
-          
-          if (errorMsg.toLowerCase().includes('email') && 
-              (errorMsg.toLowerCase().includes('verify') || 
-               errorMsg.toLowerCase().includes('confirm'))) {
-            // Show verification UI
-            setShowVerification(true);
-            await handleSendVerificationCode();
-          }
-        }
-      } else {
-        // Phone login - we need to adapt this to use the email/password login since
-        // phone login isn't implemented in authSlice
-        const formattedPhone = formatPhoneNumber(phoneNumber);
-        
-        try {
-          // Note: In your authSlice.ts, there's no phone login support
-          // We'll use the email field for the phone number as a workaround
-          const resultAction = await dispatch(login({ email: formattedPhone, password }));
-          
-          if (login.rejected.match(resultAction)) {
-            const errorMsg = resultAction.payload as string;
-            
-            if (errorMsg.toLowerCase().includes('phone') && 
-                (errorMsg.toLowerCase().includes('verify') || 
-                 errorMsg.toLowerCase().includes('confirm'))) {
-              // Show phone verification UI
-              setShowVerification(true);
-              await handleSendVerificationCode();
-            } else {
-              // Show the error message
-              setSnackbar({
-                open: true,
-                message: errorMsg,
-                severity: 'error'
-              });
-            }
-          }
-        } catch (phoneError) {
-          console.error('Phone login error:', phoneError);
-          setSnackbar({
-            open: true,
-            message: 'An error occurred during phone login. Please try again.',
-            severity: 'error'
-          });
+        if (errorMsg.toLowerCase().includes('email') && 
+            (errorMsg.toLowerCase().includes('verify') || 
+             errorMsg.toLowerCase().includes('confirm'))) {
+          // Show verification UI
+          setShowVerification(true);
+          await handleSendVerificationCode();
         }
       }
     } catch (error) {
@@ -290,9 +204,7 @@ const Login = () => {
       setTimeout(() => {
         setSnackbar({
           open: true,
-          message: loginMethod === 0 
-            ? 'Verification code sent to your email'
-            : 'Verification code sent to your phone',
+          message: 'Verification code sent to your email',
           severity: 'success'
         });
         setVerificationLoading(false);
@@ -317,17 +229,12 @@ const Login = () => {
     try {
       setTimeout(async () => {
         try {
-          const loginResult = await dispatch(login({ 
-            email: loginMethod === 0 ? email : formatPhoneNumber(phoneNumber), 
-            password
-          }));
+          const loginResult = await dispatch(login({ email, password }));
           
           if (login.fulfilled.match(loginResult)) {
             setSnackbar({
               open: true,
-              message: loginMethod === 0 
-                ? 'Email verified. Logging in...' 
-                : 'Phone verified. Logging in...',
+              message: 'Email verified. Logging in...',
               severity: 'success'
             });
           } else {
@@ -494,73 +401,26 @@ const Login = () => {
               
               {!showVerification ? (
                 <>
-                  <Tabs 
-                    value={loginMethod} 
-                    onChange={handleLoginMethodChange} 
-                    sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
-                  >
-                    <Tab 
-                      icon={<Email />} 
-                      label="Email" 
-                      id="login-tab-0"
-                      aria-controls="login-tabpanel-0"
-                    />
-                    <Tab 
-                      icon={<Phone />} 
-                      label="Phone" 
-                      id="login-tab-1"
-                      aria-controls="login-tabpanel-1"
-                    />
-                  </Tabs>
-                  
                   <Box component="form" onSubmit={handleInitialSubmit}>
-                    <TabPanel value={loginMethod} index={0}>
-                      <TextField
-                        required
-                        fullWidth
-                        id="email"
-                        label="Email Address"
-                        name="email"
-                        autoComplete="email"
-                        autoFocus
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Email color="primary" />
-                            </InputAdornment>
-                          ),
-                        }}
-                        sx={{ mb: 3 }}
-                      />
-                    </TabPanel>
-                    
-                    <TabPanel value={loginMethod} index={1}>
-                      <TextField
-                        required
-                        fullWidth
-                        id="phoneNumber"
-                        label="Phone Number"
-                        name="phoneNumber"
-                        autoComplete="tel"
-                        value={phoneNumber}
-                        onChange={handlePhoneChange}
-                        error={!!phoneError}
-                        helperText={phoneError || "Format: +63 9XX XXX XXXX or 09XX XXX XXXX"}
-                        InputProps={{
-                          startAdornment: (
-                            <InputAdornment position="start">
-                              <Phone color="primary" />
-                              <Typography variant="body2" sx={{ ml: 0.5 }}>
-                                +63
-                              </Typography>
-                            </InputAdornment>
-                          ),
-                        }}
-                        sx={{ mb: 3 }}
-                      />
-                    </TabPanel>
+                    <TextField
+                      required
+                      fullWidth
+                      id="email"
+                      label="Email Address"
+                      name="email"
+                      autoComplete="email"
+                      autoFocus
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <Email color="primary" />
+                          </InputAdornment>
+                        ),
+                      }}
+                      sx={{ mb: 3 }}
+                    />
                     
                     <TextField
                       required
@@ -624,21 +484,14 @@ const Login = () => {
                 </>
               ) : (
                 <Box sx={{ textAlign: 'center', py: 2 }}>
-                  {loginMethod === 0 ? (
-                    <Email sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                  ) : (
-                    <Phone sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-                  )}
+                  <Email sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
                   
                   <Typography variant="h6" gutterBottom>
                     Verification Required
                   </Typography>
                   
                   <Typography variant="body1" paragraph>
-                    {loginMethod === 0 
-                      ? `We've sent a verification code to ${email}`
-                      : `We've sent a verification code to ${formatPhoneNumber(phoneNumber)}`
-                    }
+                    We've sent a verification code to {email}
                   </Typography>
                   
                   {verificationError && (
