@@ -167,21 +167,21 @@ const ReportsList: React.FC = () => {
     doc.setFillColor(245, 245, 245); // Light gray background
     doc.rect(10, 11, pageWidth - 20, 20, 'F');
     
-    // Logo placeholder
-    doc.setDrawColor(200, 200, 200);
-    doc.setFillColor(240, 240, 240);
-    doc.roundedRect(15, 13, 15, 15, 1, 1, 'FD');
+    // // Logo placeholder
+    // doc.setDrawColor(200, 200, 200);
+    // doc.setFillColor(240, 240, 240);
+    // doc.roundedRect(15, 13, 15, 15, 1, 1, 'FD');
     
     // Company name
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(51, 51, 51);
-    doc.text('PRINTING PRESS ERP', 35, 21);
+    doc.text('PRINTING PRESS ERP', 15, 21);
     
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 100, 100);
-    doc.text('123 Print Avenue, Inktown, Philippines • +63 (2) 123-4567 • info@printingpresserp.com', 35, 26);
+    doc.text('123 Print Avenue, Inktown, Philippines • +63 (2) 123-4567 • info@printingpresserp.com', 15, 26);
     
     // Report title
     doc.setFont('helvetica', 'bold');
@@ -478,11 +478,7 @@ const ReportsList: React.FC = () => {
   };
 
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 2
-    }).format(amount);
+    return amount.toString()
   };
 
   // Report generation functions
