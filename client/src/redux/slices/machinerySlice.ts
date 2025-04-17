@@ -32,6 +32,28 @@ const initialState: MachineryState = {
 };
 
 // Async thunks for machinery
+export const uploadMachineryImage = createAsyncThunk(
+  'machinery/uploadMachineryImage',
+  async ({ file, machineryId }: { file: File; machineryId: number }, { rejectWithValue }) => {
+    try {
+      return await machineryService.uploadMachineryImage(file, machineryId);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to upload machinery image');
+    }
+  }
+);
+
+export const uploadMultipleMachineryImages = createAsyncThunk(
+  'machinery/uploadMultipleMachineryImages',
+  async ({ files, machineryId }: { files: File[]; machineryId: number }, { rejectWithValue }) => {
+    try {
+      return await machineryService.uploadMultipleMachineryImages(files, machineryId);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : 'Failed to upload machinery images');
+    }
+  }
+);
+
 export const fetchMachinery = createAsyncThunk(
   'machinery/fetchMachinery',
   async (filters: MachineryFilters = {}, { rejectWithValue }) => {

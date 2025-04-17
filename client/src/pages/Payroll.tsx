@@ -773,34 +773,68 @@ const PayrollPage: React.FC = () => {
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       doc.text("EMPLOYEE DETAILS", margin + 5, yPos + 8);
+
+      const empdata = [
+        [`Employee Name:`, `${employee.firstName} ${employee.lastName}`, `Pay Period:`, `${format(parseISO(payroll.startDate), 'MM/dd/yyyy')} - ${format(parseISO(payroll.endDate), 'MM/dd/yyyy')}`],
+        [`Employee ID:`, formatCurrency(payroll.deductions), `Payroll Date:`, `${payroll.paymentDate ? format(parseISO(payroll.paymentDate), 'MM/dd/yyyy') : '---'}`],
+        [`Position:`, formatCurrency(payroll.taxWithholding), `Status:`, `${payroll.status}`]
+      ];
       
-      // Left column labels with consistent alignment
-      const leftLabelX = margin + 5;
-      doc.setFont('helvetica', 'bold');
-      doc.text(`Employee Name:`, leftLabelX, yPos + 16);
-      doc.text(`Employee ID:`, leftLabelX, yPos + 24);
-      doc.text(`Position:`, leftLabelX, yPos + 32);
+
+      // TypeScript cast for autoTable
+      const autoTableFunc = autoTable as (doc: jsPDF, options: any) => void;
+
+      autoTableFunc(doc, {
+        startY: yPos + 12,
+        head: [],
+        body: empdata,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [240, 240, 240],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        margin: { left: margin + 5, right: margin + 5 },
+        styles: {
+          overflow: 'linebreak',
+          cellWidth: 'auto',
+        },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 45, halign: 'center', align: 'center' },
+          2: { cellWidth: 25},
+          3: { cellWidth: 55, halign: 'center', align: 'center' },
+        }
+      });
+
+      // // Left column labels with consistent alignment
+      // const leftLabelX = margin + 5;
+      // doc.setFont('helvetica', 'bold');
+      // doc.text(`Employee Name:`, leftLabelX, yPos + 16);
+      // doc.text(`Employee ID:`, leftLabelX, yPos + 24);
+      // doc.text(`Position:`, leftLabelX, yPos + 32);
       
-      // Left column values with consistent alignment
-      const leftValueX = margin + 80;
-      doc.setFont('helvetica', 'normal');
-      doc.text(`${employee.firstName} ${employee.lastName}`, leftValueX, yPos + 16);
-      doc.text(`${employee.employeeId || '---'}`, leftValueX, yPos + 24);
-      doc.text(`${employee.position || '---'}`, leftValueX, yPos + 32);
+      // // Left column values with consistent alignment
+      // const leftValueX = margin + 80;
+      // doc.setFont('helvetica', 'normal');
+      // doc.text(`${employee.firstName} ${employee.lastName}`, leftValueX, yPos + 16);
+      // doc.text(`${employee.employeeId || '---'}`, leftValueX, yPos + 24);
+      // doc.text(`${employee.position || '---'}`, leftValueX, yPos + 32);
       
-      // Right column labels with consistent alignment
-      const rightLabelX = pageWidth - margin - 100;
-      doc.setFont('helvetica', 'bold');
-      doc.text(`Pay Period:`, rightLabelX, yPos + 16);
-      doc.text(`Payroll Date:`, rightLabelX, yPos + 24);
-      doc.text(`Status:`, rightLabelX, yPos + 32);
+      // // Right column labels with consistent alignment
+      // const rightLabelX = pageWidth - margin - 100;
+      // doc.setFont('helvetica', 'bold');
+      // doc.text(`Pay Period:`, rightLabelX, yPos + 16);
+      // doc.text(`Payroll Date:`, rightLabelX, yPos + 24);
+      // doc.text(`Status:`, rightLabelX, yPos + 32);
       
-      // Right column values with consistent alignment
-      const rightValueX = pageWidth - margin - 25;
-      doc.setFont('helvetica', 'normal');
-      doc.text(`${format(parseISO(payroll.startDate), 'MM/dd/yyyy')} - ${format(parseISO(payroll.endDate), 'MM/dd/yyyy')}`, rightValueX, yPos + 16);
-      doc.text(`${payroll.paymentDate ? format(parseISO(payroll.paymentDate), 'MM/dd/yyyy') : '---'}`, rightValueX, yPos + 24);
-      doc.text(`${payroll.status}`, rightValueX, yPos + 32);
+      // // Right column values with consistent alignment
+      // const rightValueX = pageWidth - margin - 25;
+      // doc.setFont('helvetica', 'normal');
+      // doc.text(`${format(parseISO(payroll.startDate), 'MM/dd/yyyy')} - ${format(parseISO(payroll.endDate), 'MM/dd/yyyy')}`, rightValueX, yPos + 16);
+      // doc.text(`${payroll.paymentDate ? format(parseISO(payroll.paymentDate), 'MM/dd/yyyy') : '---'}`, rightValueX, yPos + 24);
+      // doc.text(`${payroll.status}`, rightValueX, yPos + 32);
       
       yPos += 50;
       
@@ -821,8 +855,7 @@ const PayrollPage: React.FC = () => {
         ["Gross Pay", formatCurrency(payroll.baseSalary + payroll.overtimePay + payroll.bonus)]
       ];
       
-      // TypeScript cast for autoTable
-      const autoTableFunc = autoTable as (doc: jsPDF, options: any) => void;
+      
       
       autoTableFunc(doc, {
         startY: yPos,
@@ -832,7 +865,8 @@ const PayrollPage: React.FC = () => {
         headStyles: {
           fillColor: [220, 230, 240],
           textColor: [0, 0, 0],
-          fontStyle: 'bold'
+          fontStyle: 'bold',
+          halign: 'center'
         },
         margin: { left: margin + 5, right: margin + 5 },
         styles: {
@@ -841,8 +875,8 @@ const PayrollPage: React.FC = () => {
           cellPadding: 3
         },
         columnStyles: {
-          0: { cellWidth: 150 },
-          1: { halign: 'right' }
+          0: { cellWidth: 120 },
+          1: { halign: 'center', align: 'center' }
         }
       });
       
@@ -874,7 +908,8 @@ const PayrollPage: React.FC = () => {
         headStyles: {
           fillColor: [220, 230, 240],
           textColor: [0, 0, 0],
-          fontStyle: 'bold'
+          fontStyle: 'bold',
+          halign: 'center'
         },
         margin: { left: margin + 5, right: margin + 5 },
         styles: {
@@ -883,8 +918,8 @@ const PayrollPage: React.FC = () => {
           cellPadding: 3
         },
         columnStyles: {
-          0: { cellWidth: 150 },
-          1: { halign: 'right' }
+          0: { cellWidth: 120 },
+          1: { halign: 'center', align: 'center' }
         }
       });
       
@@ -894,15 +929,15 @@ const PayrollPage: React.FC = () => {
       
       // Net Pay Section with nice styling
       doc.setFillColor(0, 100, 0); // Green background
-      doc.rect(margin, yPos, pageWidth - 2 * margin, 20, 'F');
+      doc.rect(margin, yPos, pageWidth - 2 * margin, 10, 'F');
       
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(255, 255, 255); // White text on green background
       
-      doc.text("NET PAY:", margin + 15, yPos + 14);
+      doc.text("NET PAY:", margin + 15, yPos + 6.5);
       doc.setFontSize(14);
-      doc.text(formatCurrency(payroll.netSalary), pageWidth - margin - 15, yPos + 14, { align: 'right' });
+      doc.text(formatCurrency(payroll.netSalary), pageWidth - margin - 15, yPos + 6.5, { align: 'right' });
       
       // Reset color
       doc.setTextColor(0, 0, 0);
@@ -942,10 +977,10 @@ const PayrollPage: React.FC = () => {
       doc.text("Prepared by", margin + 20, yPos + 5, { align: 'left' });
       doc.text("Received by", pageWidth - margin - 80, yPos + 5, { align: 'left' });
       
-      // Disclaimer at bottom
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'italic');
-      doc.text("This is a computer-generated document and does not require a signature.", pageWidth / 2, pageHeight - 20, { align: 'center' });
+      // // Disclaimer at bottom
+      // doc.setFontSize(8);
+      // doc.setFont('helvetica', 'italic');
+      // doc.text("This is a computer-generated document and does not require a signature.", pageWidth / 2, pageHeight - 20, { align: 'center' });
     
       // Save the PDF with the employee name and period
       const fileName = `Payslip_${employee.lastName}_${employee.firstName}_${payroll.period}.pdf`;

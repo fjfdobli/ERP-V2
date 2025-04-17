@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, Chip, IconButton, Tooltip, Tabs, Tab, Divider, Card, CardContent, List, ListItem, ListItemText, ListItemIcon, Link, LinearProgress } from '@mui/material';
-import { Add as AddIcon, Search as SearchIcon, Refresh as RefreshIcon, History as HistoryIcon, ConstructionOutlined as ConstructionIcon, ReceiptLong as ReceiptLongIcon, Build as BuildIcon, Edit as EditIcon, Delete as DeleteIcon, CheckCircle as CheckCircleIcon, Warning as WarningIcon, Error as ErrorIcon, Info as InfoIcon, DoDisturb as DoDisturbIcon, EventNote as EventNoteIcon, Engineering as EngineeringIcon, Handyman as HandymanIcon } from '@mui/icons-material';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Button, TextField, InputAdornment, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Grid, Snackbar, Alert, FormControl, InputLabel, Select, MenuItem, Chip, IconButton, Tooltip, Tabs, Tab, Divider, Card, CardContent, List, ListItem, ListItemText, ListItemIcon, Link, LinearProgress, Avatar } from '@mui/material';
+import { Add as AddIcon, Search as SearchIcon, Refresh as RefreshIcon, History as HistoryIcon, ConstructionOutlined as ConstructionIcon, ReceiptLong as ReceiptLongIcon, Build as BuildIcon, Edit as EditIcon, Delete as DeleteIcon, CheckCircle as CheckCircleIcon, Warning as WarningIcon, Error as ErrorIcon, Info as InfoIcon, DoDisturb as DoDisturbIcon, EventNote as EventNoteIcon, Engineering as EngineeringIcon, Handyman as HandymanIcon, PhotoCamera as PhotoCameraIcon, CloudUpload as CloudUploadIcon } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { fetchMachinery, createMachinery, updateMachinery, deleteMachinery,fetchMaintenanceRecords, createMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord, fetchMachineryStats, fetchMaintenanceCostSummary } from '../redux/slices/machinerySlice';
+import { fetchMachinery, createMachinery, updateMachinery, deleteMachinery, fetchMaintenanceRecords, createMaintenanceRecord, updateMaintenanceRecord, deleteMaintenanceRecord, fetchMachineryStats, fetchMaintenanceCostSummary, uploadMachineryImage, uploadMultipleMachineryImages } from '../redux/slices/machinerySlice';
 import { Machinery as MachineryType, MachineryFilters, MaintenanceRecord } from '../services/machineryService';
 import { format, parseISO, addMonths, isBefore, isAfter, formatDistance } from 'date-fns';
 
@@ -49,6 +49,8 @@ interface MachineryFormData {
   location: string;
   specifications: string;
   notes: string;
+  imageUrl: string | null; // Main image (for backward compatibility)
+  imageUrls: string[] | null; // Array of multiple image URLs
 }
 
 interface MaintenanceFormData {
@@ -97,8 +99,14 @@ const MachineryList: React.FC = () => {
     status: 'Operational',
     location: '',
     specifications: '',
-    notes: ''
+    notes: '',
+    imageUrl: null,
+    imageUrls: []
   });
+  
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imageUploading, setImageUploading] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceFormData>({
     machineryId: 0,
@@ -222,7 +230,10 @@ const MachineryList: React.FC = () => {
         status: machinery.status as any,
         location: machinery.location || '',
         specifications: machinery.specifications || '',
-        notes: machinery.notes || ''
+        notes: machinery.notes || '',
+        // Handle both single imageUrl for backwards compatibility and the new imageUrls array
+        imageUrl: machinery.imageUrl,
+        imageUrls: machinery.imageUrls || (machinery.imageUrl ? [machinery.imageUrl] : [])
       });
     } else {
       setSelectedMachinery(null);
@@ -239,9 +250,12 @@ const MachineryList: React.FC = () => {
         status: 'Operational',
         location: '',
         specifications: '',
-        notes: ''
+        notes: '',
+        imageUrl: null,
+        imageUrls: []
       });
     }
+    setImageFiles([]);
     setMachineryDialogOpen(true);
   };
 
@@ -272,6 +286,70 @@ const MachineryList: React.FC = () => {
       [name]: date
     }));
   };
+  
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      // Convert FileList to array and add to existing files
+      const newFiles = Array.from(e.target.files);
+      setImageFiles(prev => [...prev, ...newFiles]);
+      
+      // Create preview URLs for the new images
+      const newImageUrls = newFiles.map(file => URL.createObjectURL(file));
+      
+      // Update the form with new image URLs
+      setMachineryForm(prev => {
+        const updatedImageUrls = [...(prev.imageUrls || []), ...newImageUrls];
+        return {
+          ...prev,
+          // Set the first image as the main imageUrl for backward compatibility
+          imageUrl: updatedImageUrls[0] || null,
+          imageUrls: updatedImageUrls
+        };
+      });
+    }
+  };
+  
+  const handleRemoveImage = (index: number) => {
+    // Remove the image file
+    setImageFiles(prev => {
+      const newFiles = [...prev];
+      newFiles.splice(index, 1);
+      return newFiles;
+    });
+    
+    // Remove the image URL from the form
+    setMachineryForm(prev => {
+      const newImageUrls = [...(prev.imageUrls || [])];
+      newImageUrls.splice(index, 1);
+      return {
+        ...prev,
+        // Update the main imageUrl if needed
+        imageUrl: newImageUrls[0] || null,
+        imageUrls: newImageUrls
+      };
+    });
+  };
+  
+  const handleUploadImages = async (machineryId: number) => {
+    if (imageFiles.length === 0) return null;
+    
+    setImageUploading(true);
+    try {
+      // Use the multiple image upload function
+      const imageUrls = await dispatch(uploadMultipleMachineryImages({
+        files: imageFiles,
+        machineryId
+      })).unwrap();
+      
+      setImageUploading(false);
+      showSnackbar(`${imageUrls.length} images uploaded successfully`, 'success');
+      return imageUrls;
+    } catch (error: any) {
+      setImageUploading(false);
+      showSnackbar(error.message || 'Failed to upload images', 'error');
+      return null;
+    }
+  };
 
   const handleMachinerySubmit = async () => {
     setLoading(true);
@@ -279,7 +357,8 @@ const MachineryList: React.FC = () => {
     try {
       const { 
         name, type, model, serialNumber, manufacturer, purchaseDate, purchasePrice,
-        lastMaintenanceDate, nextMaintenanceDate, status, location, specifications, notes
+        lastMaintenanceDate, nextMaintenanceDate, status, location, specifications, notes,
+        imageUrls
       } = machineryForm;
       
       if (!name || !type || !model || !serialNumber) {
@@ -288,27 +367,95 @@ const MachineryList: React.FC = () => {
         return;
       }
       
-      const machineryData = {
-        name,
-        type,
-        model,
-        serialNumber,
-        manufacturer,
-        purchaseDate: purchaseDate ? format(purchaseDate, 'yyyy-MM-dd') : null,
-        purchasePrice,
-        lastMaintenanceDate: lastMaintenanceDate ? format(lastMaintenanceDate, 'yyyy-MM-dd') : null,
-        nextMaintenanceDate: nextMaintenanceDate ? format(nextMaintenanceDate, 'yyyy-MM-dd') : null,
-        status,
-        location: location || null,
-        specifications: specifications || null,
-        notes: notes || null
-      };
+      let finalImageUrls = imageUrls || [];
+      let finalMainImageUrl = finalImageUrls[0] || null;
       
       if (selectedMachinery) {
+        // For existing machinery, check if we need to upload new images
+        if (imageFiles.length > 0) {
+          const newImageUrls = await handleUploadImages(selectedMachinery.id);
+          if (newImageUrls && newImageUrls.length > 0) {
+            // Combine existing persisted images with new uploaded ones
+            const existingPersistedImages = (selectedMachinery.imageUrls || [])
+              .filter(url => !url.startsWith('blob:')); // Filter out any blob URLs
+            
+            finalImageUrls = [...existingPersistedImages, ...newImageUrls];
+            finalMainImageUrl = finalImageUrls[0];
+          }
+        } else {
+          // No new images to upload, keep existing persisted images
+          finalImageUrls = (selectedMachinery.imageUrls || [])
+            .filter(url => !url.startsWith('blob:'));
+          
+          if (selectedMachinery.imageUrl && !selectedMachinery.imageUrl.startsWith('blob:')) {
+            // Make sure the main image is included if it's not a blob URL
+            if (!finalImageUrls.includes(selectedMachinery.imageUrl)) {
+              finalImageUrls = [selectedMachinery.imageUrl, ...finalImageUrls];
+            }
+          }
+          
+          finalMainImageUrl = finalImageUrls[0] || null;
+        }
+        
+        const machineryData = {
+          name,
+          type,
+          model,
+          serialNumber,
+          manufacturer,
+          purchaseDate: purchaseDate ? format(purchaseDate, 'yyyy-MM-dd') : null,
+          purchasePrice,
+          lastMaintenanceDate: lastMaintenanceDate ? format(lastMaintenanceDate, 'yyyy-MM-dd') : null,
+          nextMaintenanceDate: nextMaintenanceDate ? format(nextMaintenanceDate, 'yyyy-MM-dd') : null,
+          status,
+          location: location || null,
+          specifications: specifications || null,
+          notes: notes || null,
+          imageUrl: finalMainImageUrl,
+          imageUrls: finalImageUrls
+        };
+        
         await dispatch(updateMachinery({ id: selectedMachinery.id, data: machineryData as any })).unwrap();
         showSnackbar('Machinery updated successfully', 'success');
       } else {
-        await dispatch(createMachinery(machineryData as any)).unwrap();
+        // For new machinery, first create the record, then upload the images if they exist
+        const machineryData = {
+          name,
+          type,
+          model,
+          serialNumber,
+          manufacturer,
+          purchaseDate: purchaseDate ? format(purchaseDate, 'yyyy-MM-dd') : null,
+          purchasePrice,
+          lastMaintenanceDate: lastMaintenanceDate ? format(lastMaintenanceDate, 'yyyy-MM-dd') : null,
+          nextMaintenanceDate: nextMaintenanceDate ? format(nextMaintenanceDate, 'yyyy-MM-dd') : null,
+          status,
+          location: location || null,
+          specifications: specifications || null,
+          notes: notes || null,
+          imageUrl: null, // Initially created without image
+          imageUrls: [] // Initially created without images
+        };
+        
+        const createdMachinery = await dispatch(createMachinery(machineryData as any)).unwrap();
+        
+        // Now upload the images if available
+        if (imageFiles.length > 0 && createdMachinery.id) {
+          finalImageUrls = await handleUploadImages(createdMachinery.id) || [];
+          finalMainImageUrl = finalImageUrls[0] || null;
+          
+          // Update the newly created machinery with the image URLs
+          if (finalImageUrls.length > 0) {
+            await dispatch(updateMachinery({ 
+              id: createdMachinery.id, 
+              data: { 
+                imageUrl: finalMainImageUrl,
+                imageUrls: finalImageUrls
+              } 
+            })).unwrap();
+          }
+        }
+        
         showSnackbar('Machinery created successfully', 'success');
       }
       
@@ -745,6 +892,7 @@ const MachineryList: React.FC = () => {
               <Table stickyHeader>
                 <TableHead>
                   <TableRow>
+                    <TableCell><strong>Image</strong></TableCell>
                     <TableCell><strong>Name</strong></TableCell>
                     <TableCell><strong>Type</strong></TableCell>
                     <TableCell><strong>Model</strong></TableCell>
@@ -761,6 +909,23 @@ const MachineryList: React.FC = () => {
                       
                       return (
                         <TableRow key={machine.id}>
+                          <TableCell>
+                            {machine.imageUrl ? (
+                              <Avatar 
+                                src={machine.imageUrl} 
+                                alt={machine.name}
+                                variant="rounded"
+                                sx={{ width: 40, height: 40 }}
+                              />
+                            ) : (
+                              <Avatar 
+                                variant="rounded"
+                                sx={{ width: 40, height: 40, bgcolor: 'grey.300' }}
+                              >
+                                <EngineeringIcon color="disabled" />
+                              </Avatar>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Link 
                               component="button"
@@ -814,7 +979,7 @@ const MachineryList: React.FC = () => {
                     })
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={7} align="center">
+                      <TableCell colSpan={8} align="center">
                         No machinery found
                       </TableCell>
                     </TableRow>
@@ -1208,6 +1373,127 @@ const MachineryList: React.FC = () => {
         
         <DialogContent>
           <Grid container spacing={3} sx={{ mt: 1 }}>
+            {/* Multiple Image Upload Section */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom>
+                Machinery Images
+              </Typography>
+              
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
+                {/* Image Gallery */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexWrap: 'wrap', 
+                  gap: 2, 
+                  justifyContent: 'center',
+                  mb: 2,
+                  width: '100%'
+                }}>
+                  {(machineryForm.imageUrls && machineryForm.imageUrls.length > 0) ? (
+                    machineryForm.imageUrls.map((imageUrl, index) => (
+                      <Box key={index} sx={{ position: 'relative' }}>
+                        <Avatar 
+                          src={imageUrl} 
+                          alt={`${machineryForm.name} image ${index + 1}`}
+                          variant="rounded"
+                          sx={{ width: 120, height: 120, border: '1px solid #eee' }}
+                        />
+                        <IconButton 
+                          size="small" 
+                          color="error" 
+                          onClick={() => handleRemoveImage(index)}
+                          sx={{ 
+                            position: 'absolute', 
+                            top: -10, 
+                            right: -10,
+                            bgcolor: 'background.paper',
+                            boxShadow: 1,
+                            '&:hover': { bgcolor: 'error.light', color: 'white' }
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    ))
+                  ) : (
+                    <Box 
+                      sx={{ 
+                        width: 120, 
+                        height: 120, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        border: '1px dashed #ccc',
+                        borderRadius: 1
+                      }}
+                    >
+                      <PhotoCameraIcon color="disabled" sx={{ fontSize: 40 }} />
+                    </Box>
+                  )}
+                  
+                  {/* Add New Image Box */}
+                  <Box 
+                    component="label" 
+                    htmlFor="image-upload"
+                    sx={{ 
+                      width: 120, 
+                      height: 120, 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      border: '1px dashed #ccc',
+                      borderRadius: 1,
+                      cursor: 'pointer',
+                      '&:hover': {
+                        bgcolor: 'action.hover'
+                      }
+                    }}
+                  >
+                    <AddIcon sx={{ fontSize: 30, mb: 1, color: 'text.secondary' }} />
+                    <Typography variant="caption" color="text.secondary">
+                      Add Image
+                    </Typography>
+                  </Box>
+                </Box>
+                
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  id="image-upload"
+                  ref={fileInputRef}
+                  onChange={handleImageChange}
+                />
+                
+                <Button 
+                  variant="outlined" 
+                  component="label" 
+                  htmlFor="image-upload"
+                  startIcon={<CloudUploadIcon />}
+                  disabled={imageUploading}
+                >
+                  {imageUploading ? 'Uploading...' : 'Add Images'}
+                </Button>
+                
+                {imageUploading && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                    <CircularProgress size={16} sx={{ mr: 1 }} />
+                    <Typography variant="caption" color="text.secondary">
+                      Uploading images...
+                    </Typography>
+                  </Box>
+                )}
+                
+                <Typography variant="caption" color="text.secondary" mt={1}>
+                  You can upload multiple images of the machinery, including close-ups of specific parts.
+                </Typography>
+              </Box>
+              
+              <Divider sx={{ my: 2 }} />
+            </Grid>
+            
             <Grid item xs={12} md={6}>
               <TextField
                 name="name"
@@ -1407,12 +1693,14 @@ const MachineryList: React.FC = () => {
       <Dialog open={maintenanceDialogOpen} onClose={handleCloseMaintenanceDialog} maxWidth="md" fullWidth>
         <DialogTitle>
           {selectedMaintenance ? 'Edit Maintenance Record' : 'Add Maintenance Record'}
-          {selectedMachinery && (
+        </DialogTitle>
+        {selectedMachinery && (
+          <Box sx={{ px: 3, mt: -2, mb: 2 }}>
             <Typography variant="subtitle1" color="text.secondary">
               for {selectedMachinery.name}
             </Typography>
-          )}
-        </DialogTitle>
+          </Box>
+        )}
         
         <DialogContent>
           <Grid container spacing={3} sx={{ mt: 1 }}>
@@ -1516,16 +1804,15 @@ const MachineryList: React.FC = () => {
         {selectedMachinery && (
           <>
             <DialogTitle>
-              <Typography variant="h6">
-                {selectedMachinery.name}
+              {selectedMachinery.name}
+              <Box component="span" sx={{ ml: 1, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
                 <Chip 
                   label={selectedMachinery.type}
                   size="small" 
                   color="primary"
-                  sx={{ ml: 1 }}
                 />
                 {getStatusChip(selectedMachinery.status)}
-              </Typography>
+              </Box>
             </DialogTitle>
             
             <DialogContent>
@@ -1535,6 +1822,60 @@ const MachineryList: React.FC = () => {
                     <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                       Machine Details
                     </Typography>
+                    
+                    {/* Display machinery images gallery if available */}
+                    {((selectedMachinery.imageUrls && selectedMachinery.imageUrls.length > 0) || selectedMachinery.imageUrl) && (
+                      <Box sx={{ mb: 3 }}>
+                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                          Machinery Images
+                        </Typography>
+                        
+                        <Box sx={{ 
+                          display: 'flex', 
+                          flexWrap: 'wrap', 
+                          gap: 2, 
+                          justifyContent: 'flex-start' 
+                        }}>
+                          {/* Display images from imageUrls array if available */}
+                          {selectedMachinery.imageUrls && selectedMachinery.imageUrls.map((imageUrl, index) => (
+                            <Box 
+                              key={index}
+                              component="img"
+                              src={imageUrl}
+                              alt={`${selectedMachinery.name} image ${index + 1}`}
+                              sx={{ 
+                                width: 150, 
+                                height: 150,
+                                objectFit: 'cover',
+                                borderRadius: 1,
+                                boxShadow: 1,
+                                cursor: 'pointer',
+                                transition: 'transform 0.2s',
+                                '&:hover': {
+                                  transform: 'scale(1.05)'
+                                }
+                              }}
+                            />
+                          ))}
+                          
+                          {/* If no imageUrls but has imageUrl (backward compatibility) */}
+                          {(!selectedMachinery.imageUrls || selectedMachinery.imageUrls.length === 0) && selectedMachinery.imageUrl && (
+                            <Box 
+                              component="img"
+                              src={selectedMachinery.imageUrl}
+                              alt={selectedMachinery.name}
+                              sx={{ 
+                                width: 150, 
+                                height: 150,
+                                objectFit: 'cover',
+                                borderRadius: 1,
+                                boxShadow: 1
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </Box>
+                    )}
                     
                     <Grid container spacing={2} sx={{ mt: 1 }}>
                       <Grid item xs={12} sm={6}>
